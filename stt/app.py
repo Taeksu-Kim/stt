@@ -37,6 +37,7 @@ class UrlBody(BaseModel):
     context: str = Field(default="", max_length=2000)
     num_speakers: Optional[int] = Field(default=None, ge=1, le=20)
     speakers: bool = True
+    force: bool = False          # true 면 같은 영상을 이미 받아 적었어도 새 작업으로
 
 
 class MergeBody(BaseModel):
@@ -101,7 +102,7 @@ def create_app(data_dir: str | Path, *, engine: Optional[EngineLike] = None, ser
     @app.post("/api/jobs/url")
     def upload_url(body: UrlBody) -> dict:
         return svc.create_url_job(body.url, title=body.title, lang=body.lang, context=body.context,
-                                  num_speakers=body.num_speakers, speakers=body.speakers)
+                                  num_speakers=body.num_speakers, speakers=body.speakers, force=body.force)
 
     @app.get("/api/jobs/{jid}")
     def job(jid: str) -> dict:

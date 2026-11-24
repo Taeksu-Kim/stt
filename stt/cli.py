@@ -19,7 +19,7 @@ import time
 import wave
 from pathlib import Path
 
-from stt.engine import Engine, EngineError
+from stt.engine import Engine, EngineError, source_key
 from stt.formats import to_json, to_srt, to_txt
 
 
@@ -194,18 +194,29 @@ def add_common(p: argparse.ArgumentParser) -> None:
 
 
 def fetch_url(url: str, eng: Engine, a) -> tuple[Path | None, dict]:
-    """주소 → 소리 파일 (<out-dir 또는 현재 폴더>/<영상 id>.<확장자>). 맥락이 비었으면 제목·채널·설명으로 채운다."""
+    """주소 → 소리 파일 (<out-dir 또는 현재 폴더>/<영상 id>.<확장자>, 옆에 <id>.info.json). 맥락이 비었으면 제목·채널·설명으로.
+    같은 유튜브 영상(출처 키 — 서비스와 같은 규칙)을 이미 받았으면 다시 받지 않는다 (--force 면 다시)."""
     base = Path(a.out_dir or ".")
-    with tempfile.TemporaryDirectory(prefix="stt-fetch-") as td:
-        try:
-            got, info = eng.fetch(url, Path(td))
-        except EngineError as ex:
-            return None, {"source": url, "ok": False, "error": ex.message}
-        base.mkdir(parents=True, exist_ok=True)
-        dst = base / f"{info.get('id') or 'download'}{got.suffix}"
-        shutil.move(str(got), str(dst))
+    key = source_key(url)
+    vid = key.split(":", 1)[1] if key.startswith("youtube:") else None
+    side = base / f"{vid}.info.json" if vid else None
+    got_before = [p for p in base.glob(f"{vid}.*") if p.suffix != ".json" and p.is_file()] if vid else []
+    if side and side.is_file() and got_before and not a.force:
+        dst, info = got_before[0], json.loads(side.read_text(encoding="utf-8"))
+    else:
+        with tempfile.TemporaryDirectory(prefix="stt-fetch-") as td:
+            try:
+                got, info = eng.fetch(url, Path(td))
+            except EngineError as ex:
+                return None, {"source": url, "ok": False, "error": ex.message}
+            base.mkdir(parents=True, exist_ok=True)
+            dst = base / f"{info.get('id') or 'download'}{got.suffix}"
+            shutil.move(str(got), str(dst))
+        if info.get("id"):
+            (base / f"{info['id']}.info.json").write_text(json.dumps(info, ensure_ascii=False), encoding="utf-8")
     if not a.context:
-        a.context = "\n".join(str(x) for x in (info.get("title"), info.get("uploader"), (info.get("description") or "")[:800]) if x)
+        a.context = "\n".join(str(x) for x in (info.get("title"), info.get("channel") or info.get("uploader"),
+                                                (info.get("description") or "")[:800]) if x)
     return dst, info
 
 
@@ -225,7 +236,9 @@ def run_transcribe(a) -> int:
                      "selection": sel.trail}
             else:
                 src, info = fetch_url(raw, eng, a)
-                r = info if src is None else {**process(src, eng, a), "url": raw, "title": info.get("title")}
+                r = info if src is None else {**process(src, eng, a), "url": raw, "title": info.get("title"),
+                                              "video": {k: info.get(k) for k in ("id", "channel", "uploader", "upload_date",
+                                                                                 "duration", "extractor", "webpage_url")}}
         else:
             r = process(Path(raw), eng, a)
         bad += r.get("ok") is False

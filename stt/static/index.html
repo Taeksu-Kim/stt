@@ -88,6 +88,7 @@ aside.jobs{background:var(--list);display:flex;flex-direction:column;min-height:
 .res{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 12px;border-radius:var(--r);cursor:pointer}
 .res:hover{background:#E0E3E8}
 .res .rt{font-size:12px;color:var(--mute);display:flex;gap:var(--gap-chip)}
+.res .rt>span:first-child{flex:1;min-width:0}.res .rt>span:last-child{flex:none;white-space:nowrap}
 .res .rx{font-size:13px;margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 mark{background:#FFE69A;color:inherit;border-radius:2px;padding:0 1px}
 .lempty{padding:12px 20px;font-size:12.5px;color:var(--mute);line-height:1.6}
@@ -356,7 +357,7 @@ aside.jobs{background:#141C28;color:#E7EBF1;border-right:0;padding-top:4px}
 .mtape{background:#232E3D;box-shadow:none}.mtape.none{border-color:#3A4658}
 .mtape i.un{opacity:.35}
 .lempty{color:#96A1B0}
-.res .rt{color:#96A1B0}.res .rx{color:#DDE3EA}.res:hover{background:#1B2431}
+.res .rt{color:#96A1B0}.res .rx{color:#DDE3EA}.res:hover{background:#1B2431}.res mark{color:var(--ink)}
 /* 떠 있는 작업면 */
 main{margin:12px 12px 12px 0;border-radius:16px;box-shadow:0 1px 2px rgba(20,28,40,.06),0 8px 28px rgba(20,28,40,.08);overflow:hidden}
 .jhead{padding:24px 40px 16px;border-bottom:0}
@@ -431,7 +432,7 @@ table.skel{background:#fff}
 </div>
     <div class="search" id="searchBox">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>
-      <input id="q" type="search" placeholder="받아 적은 글에서 찾기" aria-label="받아 적은 글에서 찾기" autocomplete="off">
+      <input id="q" type="search" placeholder="제목·채널·받아 적은 글에서 찾기" aria-label="제목·채널·받아 적은 글에서 찾기" autocomplete="off">
       <button class="icon-btn clear" id="qClear" type="button" aria-label="찾기 지우기"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div class="lh" id="lh"></div>
@@ -601,12 +602,17 @@ function miniTape(j) {
 function renderList() {
   const lh = $("#lh"), jl = $("#jl");
   if (S.search.length >= 2) {
-    lh.innerHTML = `찾은 문장 <span class="num">${S.hits.length}${S.hits.length >= 50 ? "+" : ""}</span>`;
-    if (!S.hits.length) { jl.innerHTML = `<li class="lempty">‘${esc(S.search)}’가 들어간 문장이 없습니다.</li>`; return; }
+    const nj = S.hits.filter(h => h.idx == null).length, ns = S.hits.length - nj;
+    lh.innerHTML = `찾은 것 <span class="num">${nj ? `작업 ${nj} · ` : ""}문장 ${ns}${ns >= 50 ? "+" : ""}</span>`;
+    if (!S.hits.length) { jl.innerHTML = `<li class="lempty">‘${esc(S.search)}’가 들어간 제목·채널·문장이 없습니다.</li>`; return; }
     const re = new RegExp(S.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
-    jl.innerHTML = S.hits.map(h => `<li><button class="res" type="button" data-hit="${esc(h.job_id)}:${h.idx}">
+    const mark = t => esc(t || "").replace(re, m => `<mark>${m}</mark>`);
+    jl.innerHTML = S.hits.map(h => h.idx == null   // 제목·채널이 걸린 작업
+      ? `<li><button class="res" type="button" data-job="${esc(h.job_id)}"><span class="rt"><span>${mark(h.title)}</span><span>제목·채널</span></span>
+      <span class="rx">${h.channel ? mark(h.channel) : "채널 정보 없음"}</span></button></li>`
+      : `<li><button class="res" type="button" data-hit="${esc(h.job_id)}:${h.idx}">
       <span class="rt"><span>${esc(h.title)}</span><span class="num">${mmss(h.start)}</span></span>
-      <span class="rx">${esc(h.text).replace(re, m => `<mark>${m}</mark>`)}</span></button></li>`).join("");
+      <span class="rx">${mark(h.text)}</span></button></li>`).join("");
     return;
   }
   const jobs = [...S.jobs].sort((a, b) => rank(a) - rank(b) || (b.created > a.created ? 1 : -1));
@@ -616,7 +622,7 @@ function renderList() {
     const stem = (j.audio_name || "").replace(/\.[^.]+$/, "");
     const src = j.origin === "a2a" ? `<b class="tag">A2A</b>${esc(j.caller || "다른 에이전트")}` :
                 j.kind === "live" ? (j.source_url ? "실시간 스트림" : "실시간 마이크") :
-                j.source_url ? `주소 ${esc(hostOf(j.source_url))}` : stem === j.title ? "파일" : esc(j.audio_name || "");
+                j.source_url ? (j.video?.channel ? esc(j.video.channel) : `주소 ${esc(hostOf(j.source_url))}`) : stem === j.title ? "파일" : esc(j.audio_name || "");
     const mm = [j.duration ? `<span class="num">${mmss(j.duration)}</span>` : "", j.n_speakers ? `<span>화자 ${j.n_speakers}</span>` : ""].join("");
     return `<li><button class="job${j.id === S.sel ? " sel" : ""}" type="button" data-job="${j.id}" aria-current="${j.id === S.sel}">
       <div class="jt">${esc(j.title)}</div>${miniTape(j)}<div class="jm"><span class="src">${src}</span><span class="mm">${mm}</span></div>${jobState(j)}</button></li>`;
@@ -703,6 +709,8 @@ function metaHtml(j) {
     }
   }
   if (j.origin === "a2a") m.push(`<span><b class="tag">A2A</b> ${esc(j.caller || "다른 에이전트")}에서 맡김</span>`);
+  if (j.video?.channel) m.push(`<span>${esc(j.video.channel)}</span>`);
+  if (j.video?.upload_date) { const [y, mo, d] = j.video.upload_date.split("-"); m.push(`<span class="num">${y}년 ${+mo}월 ${+d}일 올림</span>`); }
   if (j.source_url && j.kind === "file") m.push(`<a class="srcl" href="${esc(j.source_url)}" target="_blank" rel="noopener noreferrer">원본 ${esc(hostOf(j.source_url))}</a>`);
   if (j.model) tech.push(`<span>${esc(j.model.split("/").pop())}</span>`);
   if (j.diarizer) tech.push(`<span>화자 분리 DiariZen</span>`);
@@ -1142,7 +1150,9 @@ $("#upGo").addEventListener("click", async () => {
       const job = await api("/api/jobs/url", J("POST", {url: $("#uUrl").value.trim(), lang: $("#uLang").value || null, context: $("#uCtx").value,
         num_speakers: n ? +n : null, speakers: $("#uDia").checked}));
       $("#dUp").close(); $("#uUrl").value = ""; $("#uCtx").value = "";
-      toast("주소를 줄에 넣었습니다 — 소리부터 받습니다");
+      toast(!job.reused ? "주소를 줄에 넣었습니다 — 소리부터 받습니다"
+        : job.status === "done" ? "이미 받아 적은 영상이라 그 작업을 열었습니다"
+        : "이미 받아 적는 중인 영상이라 그 작업을 열었습니다");
       S.jobs = await api("/api/jobs"); await select(job.id);
     } catch (err) { $("#upErr").textContent = err.message; }
     finally { b.textContent = "받아 적기 시작"; upReady(); }

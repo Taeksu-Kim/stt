@@ -92,6 +92,8 @@ class FakeEngine:
         p = dest_dir / "source.webm"
         p.write_bytes(b"audio")
         return p, {"title": "DATING | Intermediate english podcast", "uploader": "English Cactus Podcast",
+                   "channel": "English Cactus Podcast", "upload_date": "20240501", "extractor": "youtube",
+                   "webpage_url": "https://www.youtube.com/watch?v=DHRm_2A2Qag",
                    "description": "learn English", "duration": 12.0, "id": "DHRm_2A2Qag"}
 
 
@@ -338,3 +340,173 @@ def test_restart_refetches_only_when_audio_missing(tmp_path):
     with TestClient(create_app(tmp_path / "d", engine=eng)) as c:
         assert wait_status(c, j["id"], "done")["title"].startswith("DATING")
     assert sum(1 for x in eng.calls if x[0] == "fetch") == 1
+
+
+# ---------------- 같은 영상 다시 오면 (NOTES D12) ----------------
+def _url(c, url, **body):
+    r = c.post("/api/jobs/url", json={"url": url, **body})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _fetches(eng):
+    return sum(1 for x in eng.calls if x[0] == "fetch")
+
+
+def test_same_video_url_variants_reused_and_force(env):
+    c, eng, _ = env
+    a = _url(c, "https://www.youtube.com/watch?v=dhojLjm7c9w")
+    assert a["reused"] is False and a["source_key"] == "youtube:dhojLjm7c9w"
+    j = wait_status(c, a["id"], "done")
+    # 영상 정보 칸이 채워짐 (yt-dlp -J 메타에서)
+    assert j["video"] == {"video_id": "DHRm_2A2Qag", "channel": "English Cactus Podcast", "upload_date": "2024-05-01",
+                          "site": "youtube", "webpage_url": "https://www.youtube.com/watch?v=DHRm_2A2Qag", "duration": 12.0}
+    for v in ("https://youtu.be/dhojLjm7c9w?t=10", "https://m.youtube.com/watch?v=dhojLjm7c9w&t=10s&list=PLx",
+              "https://www.youtube.com/shorts/dhojLjm7c9w"):
+        b = _url(c, v)
+        assert b["reused"] is True and b["id"] == a["id"] and b["status"] == "done", v
+    assert _fetches(eng) == 1 and len(c.get("/api/jobs").json()) == 1
+    # 일부러 새로: force
+    f = _url(c, "https://youtu.be/dhojLjm7c9w", force=True)
+    assert f["reused"] is False and f["id"] != a["id"]
+    wait_status(c, f["id"], "done")
+    assert _fetches(eng) == 2
+    # 둘 다 끝난 뒤 다시 오면 가장 최근 것
+    assert _url(c, "https://www.youtube.com/watch?v=dhojLjm7c9w")["id"] == f["id"]
+    # 다른 주소는 주소 그대로가 키
+    assert _url(c, "https://vimeo.com/123")["source_key"] == "https://vimeo.com/123"
+    # 검색: 채널 이름으로 작업이 걸린다 (문장 없이 idx=None)
+    hits = c.get("/api/search?q=Cactus").json()
+    assert any(h["idx"] is None and h["job_id"] == f["id"] for h in hits)
+
+
+def test_failed_or_canceled_only_makes_new_running_is_reused(env):
+    c, eng, _ = env
+    bad = _url(c, "https://bad.example/v")
+    wait_status(c, bad["id"], "failed")
+    again = _url(c, "https://bad.example/v")
+    assert again["reused"] is False and again["id"] != bad["id"]
+    wait_status(c, again["id"], "failed")
+    # 받는 중 → 같은 작업 / 취소한 것만 있으면 새로
+    eng.block_fetch.set()
+    w = _url(c, "https://www.youtube.com/watch?v=slow1")
+    wait_status(c, w["id"], "running")
+    r = _url(c, "https://youtu.be/slow1")
+    assert r["reused"] is True and r["id"] == w["id"] and r["status"] == "running"
+    q = _url(c, "https://www.youtube.com/watch?v=slow2")       # 줄에서 기다리는 중 → 같은 작업
+    assert _url(c, "https://youtu.be/slow2")["id"] == q["id"]
+    c.post(f"/api/jobs/{w['id']}/cancel")
+    c.post(f"/api/jobs/{q['id']}/cancel")
+    wait_status(c, w["id"], "canceled")
+    eng.block_fetch.clear()
+    n = _url(c, "https://youtu.be/slow1")
+    assert n["reused"] is False and n["id"] != w["id"]
+    wait_status(c, n["id"], "done")
+
+
+def test_language_and_speakers_decide_reuse(env):
+    c, _, _ = env
+    a = _url(c, "https://www.youtube.com/watch?v=lang1")              # 자동 → 알아낸 언어 en (가짜 엔진)
+    wait_status(c, a["id"], "done")
+    assert _url(c, "https://youtu.be/lang1", lang="en")["id"] == a["id"]      # 알아낸 언어와 같음 → 재사용
+    ko = _url(c, "https://youtu.be/lang1", lang="ko")                         # 다르게 명시 → 새로
+    assert ko["reused"] is False and ko["id"] != a["id"] and ko["lang"] == "ko"
+    wait_status(c, ko["id"], "done")
+    assert _url(c, "https://youtu.be/lang1", lang="ko")["id"] == ko["id"]
+    # 화자 분리 없이 한 작업 → 화자 분리를 원하면 새로, 원하지 않으면 재사용
+    s0 = _url(c, "https://www.youtube.com/watch?v=spk1", speakers=False)
+    wait_status(c, s0["id"], "done")
+    assert _url(c, "https://youtu.be/spk1", speakers=False)["id"] == s0["id"]
+    s1 = _url(c, "https://youtu.be/spk1")
+    assert s1["reused"] is False and s1["id"] != s0["id"]
+    wait_status(c, s1["id"], "done")
+    assert _url(c, "https://youtu.be/spk1", speakers=False)["id"] == s1["id"]      # 화자 분리 한 것은 없이 원해도 재사용
+
+
+def test_a2a_same_video_two_messages_same_job(env):
+    c, eng, _ = env
+    m1 = {"messageId": "v-1", "role": "ROLE_USER", "parts": [{"data": {"url": "https://www.youtube.com/watch?v=dhojLjm7c9w"}}],
+          "metadata": {"caller": "video_reader"}}
+    t1 = _rpc(c, "SendMessage", {"message": m1})["task"]
+    assert t1["metadata"]["reused"] is False
+    wait_status(c, t1["metadata"]["jobId"], "done")
+    m2 = {"messageId": "v-2", "role": "ROLE_USER", "parts": [{"url": "https://youtu.be/dhojLjm7c9w?t=10"}]}
+    t2 = _rpc(c, "SendMessage", {"message": m2})["task"]
+    assert t2["id"] != t1["id"] and t2["metadata"]["jobId"] == t1["metadata"]["jobId"]
+    assert t2["metadata"]["reused"] is True and t2["status"]["state"] == "TASK_STATE_COMPLETED"    # 끝난 결과 그대로
+    meta = t2["artifacts"][0]["parts"][1]["data"]["meta"]
+    assert meta["video"]["channel"] == "English Cactus Podcast" and meta["video"]["upload_date"] == "2024-05-01"
+    assert t2["metadata"]["video"]["video_id"] == "DHRm_2A2Qag"
+    assert _fetches(eng) == 1
+    # 같은 messageId 다시 → 그 A2A 작업 그대로 / force → 새 작업
+    assert _rpc(c, "SendMessage", {"message": m2})["task"]["id"] == t2["id"]
+    m3 = {"messageId": "v-3", "role": "ROLE_USER", "parts": [{"data": {"url": "https://youtu.be/dhojLjm7c9w", "force": True}}]}
+    t3 = _rpc(c, "SendMessage", {"message": m3})["task"]
+    assert t3["metadata"]["jobId"] != t1["metadata"]["jobId"] and t3["metadata"]["reused"] is False
+    wait_status(c, t3["metadata"]["jobId"], "done")
+
+
+OLD_SCHEMA = """
+CREATE TABLE jobs (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL, kind TEXT NOT NULL, origin TEXT NOT NULL, caller TEXT,
+  status TEXT NOT NULL, stage TEXT, audio_path TEXT, audio_name TEXT, duration REAL,
+  lang TEXT, context TEXT, num_speakers INTEGER, speakers_on INTEGER NOT NULL DEFAULT 1, source_url TEXT,
+  engine TEXT, model TEXT, diarizer TEXT, language TEXT, warning TEXT, error TEXT, error_kind TEXT,
+  timings TEXT, created TEXT NOT NULL, updated TEXT NOT NULL, started TEXT, finished TEXT
+);
+CREATE TABLE segments (
+  job_id TEXT NOT NULL, idx INTEGER NOT NULL, start REAL NOT NULL, end REAL NOT NULL, speaker TEXT,
+  text TEXT NOT NULL, asr_text TEXT NOT NULL, timing TEXT, checked INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (job_id, idx)
+);
+CREATE TABLE speakers (job_id TEXT NOT NULL, label TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (job_id, label));
+CREATE TABLE a2a_tasks (
+  id TEXT PRIMARY KEY, context_id TEXT NOT NULL, message_id TEXT UNIQUE, job_id TEXT, state TEXT, error TEXT, created TEXT NOT NULL
+);
+INSERT INTO jobs (id, title, kind, origin, status, speakers_on, source_url, lang, language, created, updated)
+  VALUES ('old1', '옛 영상', 'file', 'screen', 'done', 1, 'https://www.youtube.com/watch?v=oldVid&t=3', NULL, 'ko',
+          '2026-11-20 10:00:00', '2026-11-20 10:00:00');
+INSERT INTO segments VALUES ('old1', 0, 0.0, 2.0, '0', '옛 문장', '옛 문장', 'piece', 0);
+INSERT INTO a2a_tasks VALUES ('t-old', 'ctx', 'm-old', 'old1', NULL, NULL, '2026-11-20 10:00:00');
+"""
+
+
+def test_old_schema_db_migrates_and_reuses(tmp_path):
+    import sqlite3
+    d = tmp_path / "d"
+    d.mkdir()
+    db = sqlite3.connect(str(d / "stt.db"))
+    db.executescript(OLD_SCHEMA)
+    db.close()
+    eng = FakeEngine()
+    with TestClient(create_app(d, engine=eng)) as c:
+        cols = {r[1] for r in sqlite3.connect(str(d / "stt.db")).execute("PRAGMA table_info(jobs)")}
+        assert {"source_key", "video_id", "channel", "upload_date", "site", "webpage_url"} <= cols
+        old = c.get("/api/jobs/old1").json()
+        assert old["source_key"] == "youtube:oldVid" and old["video"] is None and old["updated"] == "2026-11-20 10:00:00"
+        r = _url(c, "https://youtu.be/oldVid")                   # 옛 작업도 같은 영상으로 찾힘
+        assert r["reused"] is True and r["id"] == "old1"
+        assert _rpc(c, "GetTask", {"id": "t-old"})["status"]["state"] == "TASK_STATE_COMPLETED"   # 옛 A2A 작업도 읽힘
+        n = _url(c, "https://www.youtube.com/watch?v=newVid")
+        assert wait_status(c, n["id"], "done")["video"]["channel"] == "English Cactus Podcast"
+    assert _fetches(eng) == 1
+    Service(d, eng, start_worker=False)                        # 두 번째 시작 — 이미 있는 칸은 그대로 (ALTER 다시 안 함)
+
+
+def test_a2a_cancel_of_shared_job_only_detaches(env):
+    """같은 영상을 두 요청이 함께 기다릴 때 한 요청의 취소가 다른 요청의 받아 적기를 끊지 않는다."""
+    c, eng, _ = env
+    eng.block_fetch.set()
+    msg = lambda mid: {"message": {"messageId": mid, "role": "ROLE_USER", "parts": [{"url": "https://www.youtube.com/watch?v=shared01"}]}}
+    t1 = _rpc(c, "SendMessage", msg("s-1"))["task"]
+    t2 = _rpc(c, "SendMessage", msg("s-2"))["task"]
+    jid = t1["metadata"]["jobId"]
+    assert t2["metadata"]["jobId"] == jid
+    wait_status(c, jid, "running")
+    assert _rpc(c, "CancelTask", {"id": t2["id"]})["status"]["state"] == "TASK_STATE_CANCELED"
+    assert c.get(f"/api/jobs/{jid}").json()["status"] == "running"          # 작업은 계속
+    assert _rpc(c, "GetTask", {"id": t1["id"]})["status"]["state"] == "TASK_STATE_WORKING"
+    # 남은 마지막 요청이 취소하면 작업도 취소
+    _rpc(c, "CancelTask", {"id": t1["id"]})                                    # 작업을 멈추라는 요청 (멈추기까지는 잠깐)
+    wait_status(c, jid, "canceled")
+    assert _rpc(c, "GetTask", {"id": t1["id"]})["status"]["state"] == "TASK_STATE_CANCELED"
+    eng.block_fetch.clear()

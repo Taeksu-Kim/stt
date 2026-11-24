@@ -6,10 +6,13 @@
 기능 transcribe — 소리·영상 하나를 받아 적는다.
   보내는 것: 파일 part ({"raw": base64, "filename"}) 또는 {"url": "file:///절대경로" | "https://영상 주소"} 또는
   data {"path": "/절대경로"} / data {"url": "https://…"} (유튜브 등 yt-dlp 가 여는 주소 — 소리만 받는다).
-  선택 (data): lang(ISO), context(제목·용어), numSpeakers, speakers(false면 화자 분리 생략), title.
+  선택 (data): lang(ISO), context(제목·용어), numSpeakers, speakers(false면 화자 분리 생략), title,
+  force(true면 같은 영상을 이미 받아 적었어도 새로).
   돌려받는 것: 처음엔 WORKING (줄에 들어감). GetTask 로 다시 물으면 끝났을 때 COMPLETED + artifact
   (text = 시각·화자가 붙은 글, data = {segments, speakers, meta}) + metadata.reviewUrl (사람이 확인·고치는 화면).
-  같은 messageId 로 두 번 보내면 처음 작업을 돌려준다. CancelTask 는 줄에 있거나 받아 적는 중일 때만.
+  같은 messageId 로 두 번 보내면 처음 작업을 돌려준다. 다른 messageId 라도 같은 영상(주소의 출처 키)을 이미 받아 적었거나
+  받아 적는 중이면 새 A2A 작업이 그 작업을 가리킨다 (metadata.reused = true, 끝났으면 바로 COMPLETED) — 판단은 서비스 한 곳.
+  CancelTask 는 줄에 있거나 받아 적는 중일 때만.
 """
 from __future__ import annotations
 
@@ -23,7 +26,7 @@ from urllib.parse import unquote, urlparse
 from doc_parser import a2a
 
 from stt import formats
-from stt.service import Service, ServiceError
+from stt.service import Service, ServiceError, video_of
 
 SKILLS = ("transcribe",)
 STATE = {"queued": "TASK_STATE_WORKING", "running": "TASK_STATE_WORKING", "live": "TASK_STATE_WORKING",
@@ -41,7 +44,9 @@ CARD = {
         "id": "transcribe", "name": "받아 적기",
         "description": "소리·영상 하나를 받아 적는다. 파일 part(raw base64) / file:// url / data.path(이 PC의 절대 경로) / "
                        "https 주소(url part 또는 data.url — 유튜브 등, 소리만 받음, 제목·설명을 맥락으로). "
-                       "data: lang, context, numSpeakers, speakers, title. 끝나면 artifact 에 글(text)과 구간(data), metadata.reviewUrl.",
+                       "data: lang, context, numSpeakers, speakers, title, force. 같은 영상을 이미 받아 적었으면 그 결과를 돌려준다 "
+                       "(metadata.reused, 새로 원하면 force: true). 끝나면 artifact 에 글(text)과 구간(data, meta.video = 채널·올린 날짜 등), "
+                       "metadata.reviewUrl.",
         "tags": ["stt", "transcription", "speaker-diarization"],
         "examples": ['{"data": {"path": "/abs/podcast.m4a", "lang": "en", "context": "English Cactus podcast"}}'],
         "inputModes": ["audio/*", "video/*", "application/json"], "outputModes": ["text/plain", "application/json"],
@@ -107,7 +112,7 @@ class SttTasks:
                         num_speakers=int(data["numSpeakers"]) if data.get("numSpeakers") else None,
                         speakers=data.get("speakers", True) is not False, origin="a2a", caller=caller)
             if isinstance(body, str):
-                job = self.svc.create_url_job(body, **{k: v for k, v in opts.items()})
+                job = self.svc.create_url_job(body, force=data.get("force") is True, **opts)
             elif isinstance(body, Path):
                 if not body.is_absolute() or not body.is_file():
                     raise a2a.invalid_params(f"파일이 없습니다: {body} (이 PC의 절대 경로)")
@@ -122,7 +127,7 @@ class SttTasks:
         except ServiceError as exc:
             self.store.add_task(tid, ctx, str(mid) if mid else None, None, state="rejected", error=exc.message)
             return self._view(self.store.task(tid), base)
-        self.store.add_task(tid, ctx, str(mid) if mid else None, job["id"])
+        self.store.add_task(tid, ctx, str(mid) if mid else None, job["id"], reused=bool(job.get("reused")))
         return self._view(self.store.task(tid), base)
 
     def get(self, task_id: str, base: str) -> dict:
@@ -138,8 +143,14 @@ class SttTasks:
         view = self._view(t, base)
         if view["status"]["state"] != "TASK_STATE_WORKING":
             raise a2a.not_cancelable(task_id, view["status"]["state"])
-        self.svc.cancel(t["job_id"])
-        return self._view(t, base)
+        j = self.store.job(t["job_id"])
+        others = [x for x in self.store.tasks_of_job(t["job_id"]) if x["id"] != task_id and x["state"] != "canceled"]
+        if others or t["reused"] or (j and j["origin"] != "a2a"):
+            # 같은 받아 적기를 다른 요청(다른 A2A 작업·화면)이 함께 기다린다 — 이 요청만 빠지고 작업은 계속한다 (재사용, NOTES D12)
+            self.store.set_task_state(task_id, "canceled")
+        else:
+            self.svc.cancel(t["job_id"])
+        return self._view(self.store.task(task_id), base)
 
     def _task(self, tid: str) -> dict:
         t = self.store.task(tid)
@@ -150,12 +161,16 @@ class SttTasks:
     def _view(self, t: dict, base: str) -> dict:
         if t["state"] == "rejected" or not t["job_id"]:
             return a2a.task(t["id"], t["context_id"], "TASK_STATE_REJECTED", text=t["error"] or "거부됨")
+        if t["state"] == "canceled":                    # 이 요청만 빠짐 — 함께 쓰던 받아 적기는 계속될 수 있다
+            return a2a.task(t["id"], t["context_id"], "TASK_STATE_CANCELED", text="이 요청을 취소함 (같은 영상을 기다리는 다른 요청이 있어 받아 적기는 계속)",
+                            metadata={"jobId": t["job_id"], "reviewUrl": f"{base}/#job={t['job_id']}"})
         j = self.store.job(t["job_id"])
         if not j:
             return a2a.task(t["id"], t["context_id"], "TASK_STATE_CANCELED", text="화면에서 지운 작업입니다")
         state = STATE[j["status"]]
         review = f"{base}/#job={j['id']}"
-        meta = {"jobId": j["id"], "reviewUrl": review, "status": j["status"], "stage": j["stage"]}
+        meta = {"jobId": j["id"], "reviewUrl": review, "status": j["status"], "stage": j["stage"], "reused": bool(t.get("reused")),
+                "sourceUrl": j["source_url"], "video": video_of(j)}
         if state == "TASK_STATE_WORKING":
             msg = j["stage"] or ("줄에서 기다리는 중" if j["status"] == "queued" else "받아 적는 중")
             return a2a.task(t["id"], t["context_id"], state, text=msg, metadata=meta)
@@ -165,7 +180,8 @@ class SttTasks:
             return a2a.task(t["id"], t["context_id"], state, text="취소됨", metadata=meta)
         d = self.svc.job_detail(j["id"])
         segs, names = d["segments"], d["speakers"]
-        info = {k: d[k] for k in ("title", "duration", "language", "engine", "model", "diarizer", "warning", "n_checked", "n_edited")}
+        info = {k: d[k] for k in ("title", "duration", "language", "engine", "model", "diarizer", "warning", "n_checked", "n_edited",
+                                  "source_url", "video")}
         artifact = {"artifactId": f"{j['id']}-transcript", "name": "transcript",
                     "parts": [{"text": formats.to_txt(segs, names) if segs else ""},
                               {"data": {"segments": [{k: s[k] for k in ("start", "end", "speaker", "text", "timing")} for s in segs],

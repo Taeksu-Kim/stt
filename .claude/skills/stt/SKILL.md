@@ -51,6 +51,9 @@ cd "$ROOT" && python -m stt serve          # http://127.0.0.1:8773 (이미 떠 �
   `segments`. 내려받기 `GET /api/jobs/<id>/export?fmt=txt|srt|json`.
 - A2A: `/.well-known/agent-card.json`, `POST /a2a` `SendMessage` — 파일 part / `file://` / `data.path` / https 주소(`url` part 또는 `data.url`).
   처음엔 WORKING → `GetTask`로 COMPLETED + artifact(글 + 구간) + `metadata.reviewUrl`. 같은 `messageId`는 같은 작업.
+- **같은 영상은 다시 받아 적지 않는다** (유튜브는 영상 ID 로, 주소 변형 무관): 이미 끝났거나 진행 중이면 그 작업을 돌려준다 —
+  제품 API 응답 `reused: true`, A2A `metadata.reused: true`(끝났으면 바로 COMPLETED). 언어를 다르게 정하거나 화자 분리 없이 한 것에 화자 분리를
+  원하면 새로. 사용자가 "다시 받아 적어"라고 하면 `force: true`(제품 API 본문 / A2A `data`). 채널·올린 날짜는 `video`(`metadata.video`)에.
 - 결과를 사용자에게 줄 때 **화면 링크(`reviewUrl`)를 같이** 준다 — 화면에서 고친 글이 A2A·내려받기에 그대로 반영된다.
 
 ## 4. 확인 (CLI는 입력마다 stdout 한 줄 JSON)

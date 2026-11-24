@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import queue
+import re
 import shutil
 import tempfile
 import threading
@@ -18,13 +19,45 @@ from pathlib import Path
 from typing import Optional, Protocol
 
 from stt import formats
-from stt.engine import EngineError, Selection
+from stt.engine import EngineError, Selection, source_key
 from stt.store import Store, now
 
 STAGES = {"fetch": "소리 받는 중", "prepare": "소리 꺼내는 중", "diarize": "화자 나누는 중", "transcribe": "받아 적는 중",
           "final": "최종본 만드는 중", "load": "엔진 준비 중", "listen": "듣는 중"}
 ENABLE_HINT = ("받아 적기 엔진을 쓸 수 없습니다. models.json 의 python 환경(voice-eval)과 모델이 있는지, GPU 여유가 있는지 확인하세요 "
                "— `python -m stt transcribe --dry-run <파일>` 이 이유를 보여 줍니다.")
+
+
+def _reusable(j: dict, lang: Optional[str], speakers: bool) -> bool:
+    """같은 출처 키의 기존 작업을 이번 요청에 그대로 돌려줘도 되나 — 재사용 판단은 여기 한 곳 (NOTES D12).
+    - 끝났거나(done) 줄에 있거나 받아 적는 중(queued·running)일 때만. 실패·취소한 작업은 다시 할 이유가 있으니 새로.
+    - 언어를 명시했는데 기존 작업의 언어(명시한 것, 없으면 알아낸 것)와 다르면 새로 — 다른 언어로 받아 적은 글은 쓸 수 없다.
+      기존이 자동이고 아직 언어를 모르면(줄에 있음) 같은지 알 수 없어 새로.
+    - 이번엔 화자 분리를 원하는데 기존 작업이 화자 분리를 끄고 했으면 새로. 켜고 했는데 엔진 사정으로 화자 없이 끝난 것은
+      다시 해도 같은 결과일 가능성이 커서 재사용 (사람이 원하면 force).
+    - 제목·맥락·화자 수 같은 나머지는 결과를 바꿀 만큼이 아니라 보고 재사용 — 다르게 원하면 force."""
+    if j["status"] not in ("done", "queued", "running"):
+        return False
+    if lang and (j["lang"] or j["language"] or None) != lang:
+        return False
+    if speakers and not j["speakers_on"]:
+        return False
+    return True
+
+
+def _video_fields(info: dict) -> dict:
+    """yt-dlp -J 메타 → jobs 의 영상 정보 칸. upload_date 는 YYYYMMDD → YYYY-MM-DD."""
+    d = str(info.get("upload_date") or "")
+    return {"video_id": info.get("id") or None, "channel": info.get("channel") or info.get("uploader") or None,
+            "upload_date": f"{d[:4]}-{d[4:6]}-{d[6:8]}" if re.fullmatch(r"\d{8}", d) else None,
+            "site": info.get("extractor") or None, "webpage_url": info.get("webpage_url") or None}
+
+
+def video_of(j: dict) -> Optional[dict]:
+    """작업 행 → 영상 정보 (API 요약·A2A meta 같은 모양). 주소에서 받은 적 없으면 None."""
+    if not (j.get("video_id") or j.get("channel")):
+        return None
+    return {**{k: j.get(k) for k in ("video_id", "channel", "upload_date", "site", "webpage_url")}, "duration": j["duration"]}
 
 
 class EngineLike(Protocol):
@@ -61,6 +94,8 @@ class Service:
         self.version = 0
         self.changed: list[tuple[int, str]] = []
         self._status_cache: tuple[float, dict] = (0.0, {})
+        self._create_lock = threading.Lock()              # 같은 영상 찾기 + 만들기를 한 번에 (동시 요청 2개가 둘 다 만들지 않게)
+        self._backfill_source_keys()
         self._resume()
         if start_worker:
             threading.Thread(target=self._worker, daemon=True, name="stt-worker").start()
@@ -109,20 +144,32 @@ class Service:
 
     def create_url_job(self, url: str, *, title: Optional[str] = None, lang: Optional[str] = None, context: str = "",
                        num_speakers: Optional[int] = None, speakers: bool = True, origin: str = "screen",
-                       caller: Optional[str] = None) -> dict:
-        """주소(유튜브 등)로 받아 적기 — 소리는 일꾼이 받는다 (줄·취소·재시작이 받아 적기와 같은 흐름)."""
+                       caller: Optional[str] = None, force: bool = False) -> dict:
+        """주소(유튜브 등)로 받아 적기 — 소리는 일꾼이 받는다 (줄·취소·재시작이 받아 적기와 같은 흐름).
+        같은 영상(출처 키)의 작업이 이미 있고 재사용할 수 있으면(_reusable) 새로 만들지 않고 그 작업을 돌려준다
+        (응답 reused=True). force=True 면 늘 새로."""
         url = (url or "").strip()
         if not url.startswith(("http://", "https://")) or len(url) > 2000:
             raise ServiceError("http(s) 주소를 넣어 주세요")
-        jid = uuid.uuid4().hex[:12]
         lang = (lang or "").strip().lower() or None
-        self.store.add_job(id=jid, title=(title or url)[:200], kind="file", origin=origin, caller=caller, status="queued",
-                           stage=None, audio_path=None, audio_name=None, lang=lang, context=(context or "")[:2000],
-                           num_speakers=num_speakers, speakers_on=int(speakers), source_url=url,
-                           warning=None if title else "제목은 주소를 읽으면 채웁니다")
+        key = source_key(url)
+        with self._create_lock:
+            if not force:
+                for old in self.store.jobs_by_source(key):
+                    if _reusable(old, lang, speakers):
+                        return {**self.job_summary(old["id"]), "reused": True}
+            jid = uuid.uuid4().hex[:12]
+            self.store.add_job(id=jid, title=(title or url)[:200], kind="file", origin=origin, caller=caller, status="queued",
+                               stage=None, audio_path=None, audio_name=None, lang=lang, context=(context or "")[:2000],
+                               num_speakers=num_speakers, speakers_on=int(speakers), source_url=url, source_key=key,
+                               warning=None if title else "제목은 주소를 읽으면 채웁니다")
         self.q.put(("job", jid))
         self.notify(jid)
-        return self.job_summary(jid)
+        return {**self.job_summary(jid), "reused": False}
+
+    def _backfill_source_keys(self) -> None:
+        """출처 키 칸이 생기기 전에 만든 주소 작업에 키를 채운다 (옛 DB 이주 — 한 번만 돌고 다음부터는 빈 것이 없다)."""
+        self.store.backfill_source_keys(source_key)
 
     def _fetch(self, j: dict, cancel: threading.Event) -> dict:
         """주소 작업의 소리를 받아 붙인다. 제목이 주소 그대로면 영상 제목으로, 맥락이 비었으면 제목·채널·설명으로."""
@@ -131,11 +178,11 @@ class Service:
             got, info = self.engine.fetch(j["source_url"], Path(td), cancel=cancel)
             dst = self.audio_dir / f"{j['id']}{got.suffix.lower()}"
             shutil.move(str(got), str(dst))
-        f: dict = {"audio_path": str(dst), "audio_name": None, "warning": None}
+        f: dict = {"audio_path": str(dst), "audio_name": None, "warning": None, **_video_fields(info)}
         if info.get("title") and j["title"] == j["source_url"]:
             f["title"] = str(info["title"])[:200]
         if not (j["context"] or "").strip():
-            parts = [info.get("title"), info.get("uploader"), (info.get("description") or "")[:800]]
+            parts = [info.get("title"), info.get("channel") or info.get("uploader"), (info.get("description") or "")[:800]]
             f["context"] = "\n".join(str(x) for x in parts if x)[:2000]
         if info.get("duration"):
             f["duration"] = float(info["duration"])
@@ -384,6 +431,8 @@ class Service:
                                  "language", "engine", "model", "diarizer", "warning", "error", "error_kind", "created",
                                  "updated", "started", "finished", "n_segments", "n_checked", "n_edited", "n_speakers",
                                  "source_url", "num_speakers", "speakers_on", "context")}
+        out["source_key"] = j.get("source_key")
+        out["video"] = video_of(j)
         out["timings"] = json.loads(j["timings"]) if j.get("timings") else None
         out["queue_pos"] = None
         if j["status"] == "queued":
@@ -431,7 +480,8 @@ class Service:
         if fmt == "srt":
             return formats.to_srt(segs, names), "application/x-subrip; charset=utf-8", f"{stem}.srt"
         if fmt == "json":
-            meta = {k: d[k] for k in ("id", "title", "duration", "language", "engine", "model", "diarizer", "created")}
+            meta = {k: d[k] for k in ("id", "title", "duration", "language", "engine", "model", "diarizer", "created", "source_url",
+                                      "video")}
             return formats.to_json(meta, segs, names), "application/json", f"{stem}.json"
         raise ServiceError("형식은 txt·srt·json 중 하나")
 

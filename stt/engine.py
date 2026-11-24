@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -22,12 +23,36 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Literal, Optional
+from urllib.parse import parse_qs, urlparse
 
 PKG = Path(__file__).resolve().parent
 ENGINE_RUN = PKG / "engine_run.py"
 MERGE_GAP_S = 1.0  # 같은 화자가 이보다 짧게 쉬고 이어 말하면 한 조각으로
 
 Kind = Literal["no_engine", "no_speech", "bad_audio", "fetch", "failed", "canceled"]
+
+_YT_HOSTS = ("youtube.com", "youtube-nocookie.com")
+_YT_ID = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def source_key(url: str) -> str:
+    """같은 영상 찾기용 출처 키. 유튜브는 영상 ID 로 (watch?v= · youtu.be/ · shorts/ · embed/ · live/, m.·www.,
+    뒤의 &t= · &list= 같은 인자 무시) → "youtube:<ID>". 그 밖의 주소는 주소 그대로."""
+    url = url.strip()
+    u = urlparse(url)
+    host = (u.hostname or "").lower()
+    vid = None
+    if host == "youtu.be":
+        vid = u.path.strip("/").split("/")[0]
+    elif any(host == h or host.endswith("." + h) for h in _YT_HOSTS):
+        parts = [x for x in u.path.split("/") if x]
+        if parts[:1] == ["watch"]:
+            vid = (parse_qs(u.query).get("v") or [""])[0]
+        elif len(parts) >= 2 and parts[0] in ("shorts", "embed", "live", "v"):
+            vid = parts[1]
+    if vid and _YT_ID.fullmatch(vid):
+        return f"youtube:{vid}"
+    return url
 
 
 class EngineError(Exception):
@@ -125,7 +150,7 @@ class Engine:
 
     def fetch(self, url: str, dest_dir: Path, *, cancel: Optional[threading.Event] = None) -> tuple[Path, dict]:
         """주소(유튜브 등 yt-dlp 가 여는 것) → 소리만 받아 dest_dir 에 저장. 먼저 제목·설명·길이를 읽는다.
-        → (소리 파일, {title, description, uploader, duration, webpage_url, extractor})"""
+        → (소리 파일, {title, description, uploader, channel, upload_date(YYYYMMDD), duration, webpage_url, extractor, id})"""
         if not url.startswith(("http://", "https://")):
             raise EngineError("fetch", "http(s) 주소만 받습니다")
         cmd0 = (self.cfg.get("downloader") or {}).get("command") or shutil.which("yt-dlp") or "yt-dlp"
@@ -137,7 +162,8 @@ class Engine:
         meta = json.loads(r.stdout)
         if meta.get("is_live"):
             raise EngineError("fetch", "생방송 중인 주소입니다 — 실시간 받아 적기(스트림 주소)로 넣으세요")
-        info = {k: meta.get(k) for k in ("title", "description", "uploader", "duration", "webpage_url", "extractor", "id")}
+        info = {k: meta.get(k) for k in ("title", "description", "uploader", "channel", "upload_date", "duration", "webpage_url",
+                                          "extractor", "id")}
         dest_dir.mkdir(parents=True, exist_ok=True)
         r = self._run([cmd0, "-q", "--no-playlist", "--no-warnings", "-f", "bestaudio/best", "-o",
                        str(dest_dir / "source.%(ext)s"), url], cancel)
