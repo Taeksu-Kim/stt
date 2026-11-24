@@ -1,0 +1,25 @@
+stt
+Copyright 2026 Taeksu Kim
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Included in this repository:
+- Pretendard (SIL Open Font License 1.1, https://github.com/orioncactus/pretendard) — unmodified font files in
+  stt/static/fonts/ with their license (stt/static/fonts/LICENSE.txt).
+
+Third-party software this code depends on (installed separately, not included in this repository):
+- doc_reader (Apache-2.0, https://github.com/Taeksu-Kim/doc_reader) — the `doc_parser.a2a` A2A endpoint.
+- FastAPI, Starlette, Uvicorn, pydantic, python-multipart, httpx (MIT / BSD / Apache-2.0) — the server.
+- Engine environment: qwen-asr (Apache-2.0), faster-whisper (MIT), CTranslate2 (MIT), PyTorch (BSD-3-Clause),
+  soundfile (BSD-3-Clause), NumPy (BSD-3-Clause), onnxruntime (MIT; Silero VAD model bundled with faster-whisper, MIT).
+- FFmpeg (LGPL-2.1+ / GPL depending on the build) — called as an external program.
+- yt-dlp (Unlicense) — called as an external program, only when an address (URL) is given.
+- Optional: DiariZen (code MIT, model weights CC BY-NC 4.0 — non-commercial), pyannote.audio (MIT) — speaker diarization,
+  installed and run separately; its path is set in stt/models.json.
+- Optional: pytest (MIT), Playwright (Apache-2.0) for tests and the browser check.
+
+Models downloaded separately (not included): Qwen3-ASR (Apache-2.0), Whisper large-v3-turbo (MIT) via the
+faster-whisper conversion (mobiuslabsgmbh/faster-whisper-large-v3-turbo).
+
+Audio fetched from addresses (e.g. YouTube) is stored only in the local data/ folder. Respect the terms of the site
+and the rights of the content owner when transcribing others' media.

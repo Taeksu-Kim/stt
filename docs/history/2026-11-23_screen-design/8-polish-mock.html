@@ -1,0 +1,1130 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stt 받아쓰기</title>
+<style>
+@font-face{font-family:"Pretendard";font-weight:400;font-display:swap;src:url(/static/fonts/Pretendard-Regular.ttf) format("truetype")}
+@font-face{font-family:"Pretendard";font-weight:500;font-display:swap;src:url(/static/fonts/Pretendard-Medium.ttf) format("truetype")}
+@font-face{font-family:"Pretendard";font-weight:600;font-display:swap;src:url(/static/fonts/Pretendard-SemiBold.ttf) format("truetype")}
+:root{
+  /* 콘셉트 카드 docs/design/concept.md — 규칙에서 나온 값 */
+  --shell:#16202E; --surf:#fff; --list:#E9EBEE; --bg:#F2F3F5;
+  --ink:#1B2130; --ink2:#4D5565; --mute:#636975; --line:#E3E6EA; --line2:#D5D9DF; --lane:#E9EBEF; --lbw:132px;
+  --main:#1B2130; --main-h:#000000; --main-t:#EDF0F5; --ok-d:#5CC08A;
+  --proof:#C42F26; --live:#D98200; --live-t:#FFF4E0; --ok:#1B6F45; --warn-t:#FFF6E5; --err-t:#FDECEA;
+  --f:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --r:6px; --float:0 1px 3px rgba(20,30,50,.10),0 4px 14px rgba(20,30,50,.08);
+  /* 간격 — 관계 이름 */
+  --gap-text:4px; --gap-chip:8px; --gap-part:12px; --gap-edge:28px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.45 var(--f);-webkit-font-smoothing:antialiased;word-break:keep-all;overflow-wrap:anywhere}
+.num{font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--main);outline-offset:2px}
+.job:focus-visible,.res:focus-visible,.segs button:focus-visible,.lb .nm:focus-visible,h1.title:focus-visible{outline-offset:-2px}
+::selection{background:#D5DEEA}
+svg{flex:none}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- 셸 ---------- */
+header.top{height:52px;display:flex;align-items:center;gap:var(--gap-part);padding:0 20px;background:var(--shell);color:#fff;position:relative;z-index:3}
+.brand{font-weight:600;font-size:16px;letter-spacing:-.01em;display:flex;align-items:baseline;gap:6px}
+.brand span{font-weight:400;opacity:.65}
+.eng{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:13px;font-size:12px;color:#C9D1DC;background:rgba(255,255,255,.06);border:0;cursor:pointer}
+.eng i{width:7px;height:7px;border-radius:50%;background:var(--ok-d)}
+.eng.off{color:#FFD9A3}.eng.off i{background:var(--live)}
+.conn{font-size:12px;color:#FFD9A3;display:none}.conn.on{display:inline}
+header .sp{flex:1}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:var(--r);font-weight:500;font-size:13px;border:1px solid transparent;cursor:pointer;white-space:nowrap;background:none;transition:background .15s,border-color .15s}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.fill{background:var(--main);color:#fff}.btn.fill:hover:not(:disabled){background:var(--main-h)}
+.btn.fill-l{background:#fff;color:var(--ink)}.btn.fill-l:hover{background:#E9ECF1}
+.btn.ghost-d{color:#fff;border-color:rgba(255,255,255,.3)}.btn.ghost-d:hover{background:rgba(255,255,255,.08)}
+.btn.line{border-color:var(--line2);background:#fff;color:var(--ink)}.btn.line:hover:not(:disabled){background:#F6F7F9}
+.btn.quiet{color:var(--ink2)}.btn.quiet:hover:not(:disabled){background:#EEF0F3}
+.btn.danger{color:var(--proof)}.btn.danger:hover{background:var(--err-t)}
+.btn.sm{height:28px;padding:0 8px;font-size:12.5px}
+.icon-btn{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:var(--r);border:0;background:none;color:var(--ink2);cursor:pointer}
+.icon-btn:hover{background:#EEF0F3;color:var(--ink)}
+.lamp{width:8px;height:8px;border-radius:50%;background:var(--live);display:inline-block;flex:none}
+.lamp.blink{animation:blink 1.2s ease-in-out infinite}
+@keyframes blink{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.lamp.blink{animation:none}}
+
+.wrap{display:grid;grid-template-columns:var(--listw,272px) 1fr;height:calc(100vh - 52px);position:relative}
+/* 목록 폭 조절 (끌기 · ←/→ · 두 번 눌러 기본) */
+.split{position:absolute;top:0;bottom:0;left:calc(var(--listw,272px) - 1px);width:8px;cursor:col-resize;z-index:2;touch-action:none}
+.split::after{content:"";position:absolute;top:0;bottom:0;left:0;width:2px;background:transparent;transition:background .15s}
+.split:hover::after,.split.drag::after,.split:focus-visible::after{background:var(--line2)}
+.split:focus-visible{outline-offset:-2px}
+
+/* ---------- 작업 목록 ---------- */
+aside.jobs{background:var(--list);display:flex;flex-direction:column;min-height:0;overflow:hidden;border-right:1px solid #DCDFE4}
+.search{position:relative;margin:16px 16px 12px}
+.search svg{position:absolute;left:10px;top:9px;color:var(--mute)}
+.search input{width:100%;height:32px;border:1px solid transparent;border-radius:var(--r);background:#fff;padding:0 32px;font:13px var(--f);color:var(--ink)}
+.search input:focus{border-color:var(--main);outline:none;box-shadow:0 0 0 2px rgba(27,33,48,.28)}
+.search .clear{position:absolute;right:4px;top:4px;width:24px;height:24px;display:none}
+.search.has .clear{display:inline-grid}
+.lh{display:flex;justify-content:space-between;align-items:baseline;margin:6px 20px 8px;font-size:12px;font-weight:600;color:var(--ink2)}
+.lh span{font-weight:400;color:var(--mute)}
+.jl{list-style:none;margin:0;padding:0 8px 16px;overflow:auto;flex:1;min-height:0}
+.job{display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);margin-bottom:2px;cursor:pointer;border:0;background:none}
+.job:hover{background:#E0E3E8}
+.job.sel{background:#fff;box-shadow:inset 0 0 0 1px var(--line2)}
+.mtape{position:relative;height:6px;background:#DADDE2;border-radius:1px;margin:8px 0 6px;overflow:hidden}
+.mtape i{position:absolute;top:0;bottom:0}.mtape.none{background:none;border:1px dashed #BFC4CC;height:6px}.mtape i.un{opacity:.38}
+.jt{font-weight:600;font-size:13px;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jm{display:flex;justify-content:space-between;gap:var(--gap-chip);font-size:12px;color:var(--mute);margin-top:4px}
+.jm .src{display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jm .mm{display:flex;gap:var(--gap-chip);flex:none}
+.tag{font-weight:600;font-size:11px;color:var(--ink2);border:1px solid #C3C8D0;border-radius:3px;padding:0 4px;line-height:15px;flex:none}
+.st{display:flex;align-items:center;gap:var(--gap-chip);font-size:12px;color:var(--ink2);margin-top:6px}
+.st .bar{width:56px;height:4px;background:#D6DAE0;border-radius:2px;overflow:hidden}.st .bar i{display:block;height:100%;background:var(--ok)}
+.st svg{flex:none}.st.ok{color:var(--ok)}.st.mute{color:var(--ink2)}.st.live{color:#8F5600}.st.err{color:var(--proof)}.st .r{color:var(--proof)}
+.st.run{color:var(--main)}
+.res{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 12px;border-radius:var(--r);cursor:pointer}
+.res:hover{background:#E0E3E8}
+.res .rt{font-size:12px;color:var(--mute);display:flex;gap:var(--gap-chip)}
+.res .rx{font-size:13px;margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+mark{background:#FFE69A;color:inherit;border-radius:2px;padding:0 1px}
+.lempty{padding:12px 20px;font-size:12.5px;color:var(--mute);line-height:1.6}
+
+/* ---------- 본문 ---------- */
+main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--surf)}
+.jhead{padding:16px var(--gap-edge) 12px;border-bottom:1px solid var(--line);flex:none}
+.trow{display:flex;align-items:flex-start;gap:var(--gap-part)}
+h1.title{font-weight:600;font-size:20px;line-height:1.3;margin:0;letter-spacing:-.01em;flex:0 1 auto;min-width:0;cursor:text;border-radius:4px;padding:1px 4px;margin-left:-4px}
+h1.title:hover{background:#F4F5F7}
+h1.title svg{width:15px;height:15px;margin-left:8px;vertical-align:-1px;color:var(--mute);opacity:0;transition:opacity .15s}.jhead:hover h1.title svg{opacity:.5}h1.title:hover svg,h1.title:focus-visible svg{opacity:1}
+input.title-in{flex:1;font:600 20px/1.3 var(--f);border:1px solid var(--main);border-radius:4px;padding:0 4px;margin-left:-5px;color:var(--ink)}
+.meta .num,.tab .num,.st .num{font-variant-numeric:normal}
+.meta{display:flex;flex-wrap:wrap;gap:var(--gap-text) 16px;font-size:12.5px;color:var(--ink2);margin-top:4px}
+.meta .r{color:var(--proof)}.meta .ok{color:var(--ok)}
+.meta .tech{display:inline-flex;gap:var(--gap-chip);color:var(--mute);margin-left:auto}
+.note{margin-top:12px;padding:8px 12px;border-radius:var(--r);font-size:13px;display:flex;gap:var(--gap-chip);align-items:flex-start;line-height:1.5}
+.note.warn{background:var(--warn-t);color:#7A4A00}.note.err{background:var(--err-t);color:#8E231C}.note.live{background:var(--live-t);color:#7A4A00;align-items:center}
+.note .acts{margin-left:auto;display:flex;gap:6px;flex:none}
+
+/* 트랙 */
+.tracks{margin-top:14px;position:relative;user-select:none}
+.ln{display:grid;grid-template-columns:var(--lbw) 1fr;align-items:center;height:28px}
+.lb{font-size:12.5px;font-weight:600;color:var(--c);display:flex;justify-content:space-between;align-items:center;padding-right:12px;min-width:0}
+.lb .nm{border:0;background:none;padding:4px;min-height:24px;margin-left:-4px;border-radius:4px;font:inherit;color:inherit;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:88px;text-align:left}
+.lb .nm:hover{background:#F1F2F5}
+.lb .nm svg{opacity:0;margin-left:4px;vertical-align:-1px;transition:opacity .15s}.lb .nm:hover svg,.lb .nm:focus-visible svg,.tracks:hover .lb .nm svg{opacity:.6}.lb .nm:hover svg{opacity:1}
+.lb{position:relative}
+.spop{position:absolute;left:0;top:28px;z-index:6;width:280px;background:#fff;border:1px solid var(--line2);border-radius:8px;box-shadow:var(--float);padding:12px;color:var(--ink);font-weight:400}
+.spop .fl{display:block;font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:12px}
+.spop input{display:block;width:100%;height:32px;margin-top:4px;border:1px solid var(--line2);border-radius:var(--r);padding:0 8px;font:13px var(--f);color:var(--ink)}
+.spop input:focus{border-color:var(--main);outline:none;box-shadow:0 0 0 2px rgba(27,33,48,.28)}
+.spop .mg{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.spop .row{display:flex;align-items:center;justify-content:space-between}.spop small{color:var(--mute);font-size:12px}
+.lb em{font-style:normal;font-weight:400;color:var(--mute);flex:none}
+
+.tr{position:relative;height:16px;background:var(--lane);border-radius:2px;cursor:pointer}
+.tr i{position:absolute;top:0;bottom:0;background:var(--c);border-radius:1px;min-width:2px}
+.tr i.un{opacity:.38}
+.tr .et{position:absolute;top:-5px;width:2px;height:5px;background:var(--proof);margin-left:-1px}
+.tr.livelane i{background:var(--live)}
+.ruler{margin-left:var(--lbw);position:relative;height:18px;font-size:11px;color:var(--mute)}
+.ruler span{position:absolute;transform:translateX(-50%);top:4px;white-space:nowrap}.ruler span.t0{transform:none}.ruler span.tn{transform:translateX(-100%)}
+.ov{position:absolute;top:0;bottom:18px;left:var(--lbw);right:0;pointer-events:none}
+.view{position:absolute;top:-4px;bottom:-2px;border:1.5px solid var(--main);background:none;border-radius:3px;min-width:4px}
+.head{position:absolute;top:-6px;bottom:-2px;width:2px;background:var(--ink);margin-left:-1px}
+.legend{display:flex;justify-content:flex-end;gap:var(--gap-part);font-size:11px;color:var(--mute);margin-top:2px}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+.legend .sw{width:12px;height:8px;border-radius:1px;background:var(--c0,#0F7D73)}.legend .sw.un{opacity:.38}
+.legend .tk{width:2px;height:8px;background:var(--proof)}.legend .bx{width:12px;height:8px;border:1.5px solid var(--main);border-radius:2px}
+.stages{display:flex;align-items:center;gap:var(--gap-part);height:64px;margin-left:var(--lbw);padding:0 4px;color:var(--mute);font-size:13px}
+.stages b{display:inline-flex;align-items:center;gap:6px;font-weight:500}
+.stages b.now{color:var(--main)}.stages b.done{color:var(--ink2)}
+.stages b.now::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--main);animation:blink 1.2s ease-in-out infinite}
+.stages .sep{width:24px;height:1px;background:var(--line2)}
+.stages .el{margin-left:auto}
+.bar2.solo{margin-top:14px}.bar2.solo .stages{margin-left:0;height:34px;padding:0;flex:1}.bar2.solo .stages .el{margin-left:16px}
+
+/* 재생 줄 */
+.bar2{display:flex;align-items:center;gap:var(--gap-chip);margin-top:12px}
+.pb{width:34px;height:34px;border-radius:50%;background:var(--main);color:#fff;display:grid;place-items:center;border:0;cursor:pointer}
+.pb:hover:not(:disabled){background:var(--main-h)}.pb:disabled{background:var(--line);color:var(--mute);cursor:default}
+.tm{font-size:13px;color:var(--ink2);margin-right:var(--gap-chip)}.tm b{color:var(--ink);font-weight:600}
+.follow{display:inline-flex;align-items:center;gap:4px;min-height:24px;font-size:12.5px;color:var(--ink2);cursor:pointer}
+.bar2 .sp{flex:1}
+.btn.spd{min-width:48px;justify-content:center}
+.menu{position:relative}
+.menu .pop{position:absolute;right:0;top:34px;background:#fff;border:1px solid var(--line2);border-radius:var(--r);box-shadow:var(--float);padding:4px;min-width:200px;z-index:5;display:none}
+.menu.open .pop{display:block}
+.menu .pop a,.menu .pop button{display:flex;justify-content:space-between;gap:12px;width:100%;padding:8px 12px;border-radius:4px;color:var(--ink);text-decoration:none;font-size:13px;border:0;background:none;cursor:pointer;text-align:left}
+.menu .pop a:hover,.menu .pop button:hover{background:#F2F4F6}
+.menu .pop small{color:var(--mute)}
+#moreMenu .pop button{flex-direction:column;align-items:flex-start;gap:2px}
+.menu .pop button span{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+#moreMenu .pop small{padding-left:24px}
+.menu .pop{min-width:220px}
+
+/* 문장 표 */
+.scroll{flex:1;overflow:auto;min-height:0;position:relative}
+table.segs{width:100%;border-collapse:collapse}
+.segs td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:baseline;font-size:15px;line-height:1.55}
+.segs tr{cursor:pointer}
+.segs tr:hover td{background:#F7F8FA}
+.segs td.t{width:64px;padding-left:4px;font-size:12px;color:var(--ink2);white-space:nowrap}
+/* 추정 표시 ≈ 는 시각 앞 고정 칸에 작게 — 숫자 열이 줄마다 같은 자리에서 시작 */
+.segs .ap{display:inline-block;width:10px;font-size:11px;color:var(--mute)}
+.segs td.t.est,.segs td.t.live{color:var(--mute)}
+.segs td.w{width:1%;font-size:12.5px;font-weight:600;white-space:nowrap;padding-left:4px}
+.segs td.w .wn{display:inline-block;max-width:120px;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+.tdot{display:none;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.segs td.x{position:relative;padding-right:var(--gap-edge)}
+.segs td.c{width:52px;text-align:center;padding:0 0 0 calc(var(--gap-edge) - 8px)}
+.segs.nochk td.c{width:calc(var(--gap-edge) - 4px);padding:0}
+.chk{width:28px;height:28px;border-radius:var(--r);border:0;background:none;color:#B4BAC4;cursor:pointer;display:inline-grid;place-items:center;vertical-align:middle}
+.chk:hover{background:#EEF0F3;color:var(--ink2)}
+.chk.on{color:var(--ok)}
+.segs tr.now td{background:var(--main-t)}
+.segs tr.now td.t{color:var(--ink);font-weight:600}
+.segs tr.now td:first-child{box-shadow:inset 3px 0 var(--main)}
+.segs tr.hit td{background:#FFF7D6}
+.segs tr.redo td.x{color:var(--mute)}
+del{color:var(--proof);text-decoration-thickness:1.5px}
+ins{color:var(--proof);text-decoration:none;font-weight:600}
+.racts{position:absolute;right:8px;top:2px;display:none;gap:2px;padding:2px;background:#fff;border:1px solid var(--line2);border-radius:var(--r);box-shadow:var(--float)}
+.segs tr:hover .racts,.segs tr:focus-within .racts{display:flex}
+.segs tr.now .racts{display:flex;position:static;margin:6px 0 0 -8px;padding:0;border:0;box-shadow:none;background:none;flex-wrap:wrap}
+.segs tr.now .racts button{height:28px;color:var(--ink)}
+.segs tr.now .racts button:hover{background:#DFE4EC}
+.racts button{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 8px;border:0;background:none;border-radius:4px;font-size:12px;color:var(--ink2);cursor:pointer;white-space:nowrap}
+.racts button:hover{background:#F1F3F5;color:var(--ink)}
+.ed textarea{width:100%;min-height:56px;font:15px/1.55 var(--f);border:1px solid var(--main);border-radius:var(--r);padding:6px 8px;resize:vertical;color:var(--ink)}
+.ed .row{display:flex;gap:6px;margin-top:6px;align-items:center}
+.ed .row small{color:var(--mute);margin-left:auto}
+.orig{display:block;font-size:12px;color:var(--mute);margin-top:2px}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid #C9CED6;border-top-color:var(--main);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-1px;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tempty{padding:48px var(--gap-edge);color:var(--ink2);font-size:13px;line-height:1.7;max-width:640px}
+.tempty h2{font-size:16px;font-weight:600;margin:0 0 6px;color:var(--ink)}
+.tbar{display:flex;align-items:center;gap:var(--gap-chip);padding:0 var(--gap-edge);border-bottom:1px solid var(--line);flex:none;height:40px}
+.tabs{display:flex;gap:4px;height:100%}
+.tab{display:inline-flex;align-items:center;gap:6px;height:100%;padding:0 8px;border:0;background:none;font-size:13px;color:var(--ink2);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab .num{font-size:12px;color:var(--mute)}
+.tab:hover{color:var(--ink)}
+.tab.on{color:var(--ink);font-weight:600;border-bottom-color:var(--main)}
+.tbar .sp{flex:1}
+kbd.inv{color:#fff;border-color:rgba(255,255,255,.45)}
+a.btn{text-decoration:none}
+.btn.follow[aria-pressed=true]{color:var(--ink)}.btn.follow svg{margin-right:2px}
+kbd{font:500 11px var(--f);color:var(--ink2);border:1px solid var(--line2);border-bottom-width:2px;border-radius:4px;padding:0 4px;margin-left:6px;line-height:16px}
+.segs tr.flash td{animation:flash 1.2s ease-out}
+@keyframes flash{0%{background:#FFE69A}100%{background:transparent}}
+.skel td{color:transparent}.skel td span{display:block;height:12px;border-radius:3px;background:#EEF0F3}
+
+/* 첫 사용 */
+.first{margin:auto;max-width:560px;padding:40px;text-align:left}
+.first h2{font-size:20px;font-weight:600;margin:0 0 8px}
+.first p{color:var(--ink2);line-height:1.7;margin:0 0 16px}
+.drop{border:1.5px dashed #BAC1CB;border-radius:10px;padding:28px;display:flex;flex-direction:column;align-items:flex-start;gap:12px;color:var(--ink2);background:#FAFBFC}
+.drop.over{border-color:var(--main);background:var(--main-t)}
+.drop .ways{display:flex;gap:var(--gap-chip)}
+.first ul{margin:16px 0 0;padding-left:18px;color:var(--ink2);font-size:13px;line-height:1.8}
+
+/* 대화창 */
+dialog{border:0;border-radius:10px;padding:0;box-shadow:0 12px 40px rgba(20,30,50,.25);width:min(520px,calc(100vw - 32px));color:var(--ink)}
+dialog::backdrop{background:rgba(22,32,46,.45)}
+.dh{padding:16px 24px 4px;font-weight:600;font-size:16px}
+.db{padding:8px 24px 4px}
+.df{padding:12px 24px 16px;display:flex;justify-content:flex-end;gap:8px}
+.field{margin-bottom:16px}
+.field>label,.field>.lab{display:block;font-size:12.5px;font-weight:600;color:var(--ink2);margin-bottom:5px}
+.field input[type=text],.field input[type=url],.field select,.field textarea{width:100%;height:36px;border:1px solid var(--line2);border-radius:var(--r);padding:0 12px;font:13px var(--f);color:var(--ink);background:#fff}
+.field textarea{height:64px;padding:8px 12px;resize:vertical;line-height:1.5}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--main);outline:none;box-shadow:0 0 0 2px rgba(27,33,48,.28)}
+.field .help{font-size:12px;color:var(--mute);margin-top:4px;line-height:1.5}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:var(--r);overflow:hidden}
+.seg label{display:inline-flex;align-items:center;gap:6px;padding:0 12px;height:32px;font-size:13px;cursor:pointer;border-right:1px solid var(--line2)}
+.seg label:last-child{border-right:0}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label:has(input:checked){background:var(--main-t);color:var(--main);font-weight:600}
+.seg label:has(input:focus-visible){outline:2px solid var(--main);outline-offset:-2px}
+.files{font-size:12.5px;color:var(--ink2);margin-top:8px;display:flex;flex-direction:column;gap:2px}
+.check{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}
+.derr{color:var(--proof);font-size:12.5px;margin:0 24px}
+.lvlw{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)}
+.bar2.live{min-height:34px}.bar2.live b{font-weight:600;color:#8F5600}.bar2 .hint{font-size:12px;color:var(--mute)}.el2{font-size:13px;color:var(--ink2)}
+.ltail{display:flex;align-items:center;gap:var(--gap-chip);padding:12px var(--gap-edge);font-size:12.5px;color:#8F5600}
+.level{height:6px;background:var(--lane);border-radius:3px;overflow:hidden;width:120px}.level i{display:block;height:100%;background:var(--live);width:0;transition:width .08s}
+
+#toast{position:fixed;left:calc(var(--listw,272px) + 16px);bottom:16px;background:var(--shell);color:#fff;padding:9px 14px;border-radius:var(--r);font-size:13px;box-shadow:var(--float);opacity:0;transform:translateY(6px);transition:all .2s;pointer-events:none;z-index:20}
+#toast.on{opacity:1;transform:none}
+#toast.err{background:#8E231C}
+
+@media (max-width:900px){
+  :root{--lbw:96px;--gap-edge:16px}
+  .wrap{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto;min-height:calc(100vh - 52px)}
+  aside.jobs{max-height:34vh;border-right:0;border-bottom:1px solid #DCDFE4}
+  main{min-height:70vh}
+  .bar2{flex-wrap:wrap;row-gap:8px}
+  .segs td.w .wn{max-width:84px}
+  .split{display:none}
+  #toast{left:16px}
+  header.top{padding:0 12px;gap:8px}
+  header .btn span.lbl,.eng span{display:none}
+}
+@media (max-width:600px){
+  .segs td.w{display:none}
+  .tdot{display:inline-block}
+  .segs td.t{width:64px}
+  .follow,.spd{display:none}
+  .lb em{display:none}
+}
+
+/* ===== 다듬기 시안 ===== */
+.brand{align-items:center;gap:8px}.brand .logo{margin-right:2px}
+.jhead{padding:20px var(--gap-edge) 14px;background:linear-gradient(#fff,#fff)}
+h1.title{font-size:22px;letter-spacing:-.02em;font-weight:600}
+.meta{margin-top:6px;color:var(--mute)}.meta>span:not(.tech):not(.r){color:var(--ink2)}
+/* 데크: 트랙을 담는 판 */
+.tracks{margin:16px calc(-1 * var(--gap-edge)) 0;padding:12px var(--gap-edge) 6px;background:#F6F7F9;border-top:1px solid #EDEFF2;border-bottom:1px solid #EDEFF2}
+.ln{height:30px}
+.tr{height:18px;background:#fff;border-radius:4px;box-shadow:inset 0 0 0 1px #E6E9EE;overflow:visible}
+.tr::before{content:"";position:absolute;inset:0;border-radius:4px;background-image:repeating-linear-gradient(90deg,transparent 0,transparent calc(var(--grid) - 1px),#EEF0F4 calc(var(--grid) - 1px),#EEF0F4 var(--grid));pointer-events:none}
+.tr i{top:2px;bottom:2px;border-radius:3px;box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
+.tr i.un{opacity:1;background:repeating-linear-gradient(135deg,var(--c) 0 2px,color-mix(in srgb,var(--c) 28%,#fff) 2px 6px) fixed}
+.tr .et{top:-4px;width:6px;height:6px;border-radius:50%;margin-left:-3px;box-shadow:0 0 0 2px #F6F7F9}
+.lb{font-size:13px}.lb .nm{display:inline-flex;align-items:center;gap:8px}
+.lb .nm::before{content:"";width:4px;height:14px;border-radius:2px;background:var(--c)}
+.lb em{font-size:12px}
+.ruler{height:20px}.ruler span{top:5px;color:#8A909A}
+.ov{top:12px;bottom:26px}
+.view{border:1px solid rgba(27,33,48,.45);background:rgba(27,33,48,.035);border-radius:6px;top:-5px;bottom:-3px}
+/* 시그니처: 테이프 헤드 */
+.head{width:1.5px;background:#1B2130;top:-14px;bottom:-4px}
+.head::before{content:attr(data-t);position:absolute;top:-6px;left:50%;transform:translateX(-50%);background:#1B2130;color:#fff;font:600 10.5px/16px var(--f);font-variant-numeric:tabular-nums;padding:0 6px;border-radius:8px;white-space:nowrap}
+.head::after{content:"";position:absolute;top:9px;left:50%;transform:translateX(-50%);border:4px solid transparent;border-top-color:#1B2130}
+.legend{margin-top:6px}.legend .sw.un{opacity:1;background:repeating-linear-gradient(135deg,var(--c0) 0 2px,color-mix(in srgb,var(--c0) 28%,#fff) 2px 6px)}
+.legend .tk{width:6px;height:6px;border-radius:50%}
+.legend .bx{border:1px solid rgba(27,33,48,.45);border-radius:3px}
+/* 재생 줄: 카운터 */
+.bar2{margin-top:14px}
+.tm{font-size:13px}.tm b{font-size:20px;letter-spacing:-.01em;margin-right:2px}
+.pb{width:38px;height:38px;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+/* 표 */
+.tbar{height:44px}
+.segs td{border-bottom-color:#EFF1F4;padding-top:10px;padding-bottom:10px}
+.segs td.x{line-height:1.6}
+.dot{width:4px;height:14px;border-radius:2px;vertical-align:-2px;margin-right:8px}
+.segs tr.now td{background:#F3F5F9}
+.segs tr.now td:first-child{box-shadow:inset 2px 0 var(--main)}
+.chk{color:#C4C9D1}
+/* 목록 */
+.job{border-radius:8px}
+.job.sel{box-shadow:0 1px 2px rgba(20,30,50,.06),inset 0 0 0 1px #DADEE4}
+.mtape{height:8px;border-radius:2px;background:#fff;box-shadow:inset 0 0 0 1px #DADEE4}
+.mtape i{top:1px;bottom:1px;border-radius:1px}
+.mtape i.un{opacity:.32}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><svg class="logo" width="20" height="16" viewBox="0 0 20 16" aria-hidden="true"><rect x="0" y="1" width="9" height="2.4" rx="1.2" fill="#5CC08A"/><rect x="5" y="5" width="13" height="2.4" rx="1.2" fill="#A894D9"/><rect x="2" y="9" width="7" height="2.4" rx="1.2" fill="#7FA6DB"/><rect x="11" y="9" width="7" height="2.4" rx="1.2" fill="#7FA6DB" opacity=".5"/><rect x="8" y="13" width="10" height="2.4" rx="1.2" fill="#D98FB0"/></svg>stt<span>받아쓰기</span></div>
+  <button class="eng" id="eng" type="button" title="엔진 상태"><i></i><span>엔진 확인 중</span></button>
+  <span class="conn" id="conn" role="status">연결이 끊겨 다시 잇는 중</span>
+  <div class="sp"></div>
+  <button class="btn ghost-d" id="bLive" type="button"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span class="lbl">실시간 받아 적기</span></button>
+  <button class="btn fill-l" id="bUp" type="button"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5M5 15v4h14v-4"/></svg><span class="lbl">파일 올리기</span></button>
+</header>
+<div class="wrap">
+  <aside class="jobs" aria-label="작업 목록">
+    <div class="search" id="searchBox">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>
+      <input id="q" type="search" placeholder="받아 적은 글에서 찾기" aria-label="받아 적은 글에서 찾기" autocomplete="off">
+      <button class="icon-btn clear" id="qClear" type="button" aria-label="찾기 지우기"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="lh" id="lh"></div>
+    <ul class="jl" id="jl"></ul>
+  </aside>
+  <div class="split" id="split" role="separator" aria-orientation="vertical" aria-label="작업 목록 폭 (←/→, 두 번 눌러 기본)" aria-controls="jl" tabindex="0"></div>
+  <main id="main" aria-live="off"></main>
+</div>
+<audio id="au" preload="metadata"></audio>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<dialog id="dUp" aria-labelledby="dUpH">
+  <form method="dialog" id="fUp">
+    <div class="dh" id="dUpH">파일 올리기</div>
+    <div class="db">
+      <div class="field">
+        <div class="drop" id="drop2">
+          <span>소리·영상 파일을 여기에 끌어 놓거나</span>
+          <div class="ways"><label class="btn line sm" for="fileIn">파일 고르기</label></div>
+          <input id="fileIn" type="file" accept="audio/*,video/*,.m4a,.mp3,.wav,.webm,.mp4,.mkv,.ogg,.flac" multiple class="sr">
+          <div class="files" id="fileList"></div>
+        </div>
+      </div>
+      <div class="two">
+        <div class="field"><label for="uLang">언어</label>
+          <select id="uLang"><option value="">자동으로 알아내기</option><option value="ko">한국어</option><option value="en">영어</option><option value="ja">일본어</option><option value="zh">중국어</option><option value="es">스페인어</option><option value="fr">프랑스어</option><option value="de">독일어</option></select></div>
+        <div class="field"><label for="uSpk">화자 수</label>
+          <select id="uSpk"><option value="">모름 (알아서)</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></div>
+      </div>
+      <div class="field"><label for="uCtx">제목·주요 용어</label>
+        <textarea id="uCtx" placeholder="예: English Cactus podcast — Anna, Brian, dating"></textarea>
+        <div class="help">영상 제목이나 설명, 사람 이름을 넣으면 고유명사를 덜 틀립니다.</div></div>
+      <label class="check"><input type="checkbox" id="uDia" checked> 화자 나누기 <small style="color:var(--mute)">끄면 빨라지지만 시각이 15초 단위가 됩니다</small></label>
+    </div>
+    <p class="derr" id="upErr" role="alert"></p>
+    <div class="df"><button class="btn quiet" value="cancel" type="submit" formnovalidate>닫기</button><button class="btn fill" id="upGo" type="button" disabled>받아 적기 시작</button></div>
+  </form>
+</dialog>
+
+<dialog id="dLive" aria-labelledby="dLiveH">
+  <form method="dialog">
+    <div class="dh" id="dLiveH">실시간 받아 적기</div>
+    <div class="db">
+      <div class="field"><span class="lab">듣는 곳</span>
+        <div class="seg" role="radiogroup" aria-label="듣는 곳">
+          <label><input type="radio" name="lsrc" value="mic" checked>이 브라우저 마이크</label>
+          <label><input type="radio" name="lsrc" value="stream">스트림 주소</label>
+        </div></div>
+      <div class="field" id="lUrlF" hidden><label for="lUrl">스트림 주소</label>
+        <input id="lUrl" type="url" placeholder="https://… (ffmpeg 가 여는 주소)">
+        <div class="help">유튜브 라이브는 <code>yt-dlp -g -f bestaudio 주소</code> 로 얻은 스트림 주소를 넣습니다.</div></div>
+      <div class="two">
+        <div class="field"><label for="lLang">언어</label>
+          <select id="lLang"><option value="">자동으로 알아내기</option><option value="ko">한국어</option><option value="en">영어</option><option value="ja">일본어</option><option value="zh">중국어</option></select></div>
+        <div class="field"><label for="lTitle">제목</label><input id="lTitle" type="text" placeholder="비우면 시작 시각"></div>
+      </div>
+      <div class="field"><label for="lCtx">주요 용어</label><input id="lCtx" type="text" placeholder="예: 회의 참석자 이름, 제품 이름"></div>
+      <p class="help" style="font-size:12px;color:var(--mute);margin:0">말이 멈출 때마다 줄이 생깁니다. 끝내면 녹음 전체로 화자와 문장 시각이 붙은 최종본을 다시 만듭니다.</p>
+    </div>
+    <p class="derr" id="liveErr" role="alert"></p>
+    <div class="df"><button class="btn quiet" value="cancel" type="submit" formnovalidate>닫기</button><button class="btn fill" id="liveGo" type="button">듣기 시작</button></div>
+  </form>
+</dialog>
+
+<dialog id="dConfirm" aria-labelledby="dcH">
+  <form method="dialog">
+    <div class="dh" id="dcH"></div>
+    <div class="db" id="dcB" style="color:var(--ink2);line-height:1.6"></div>
+    <div class="df"><button class="btn quiet" value="no" type="submit">취소</button><button class="btn fill" id="dcGo" value="yes" type="submit"></button></div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const HUES = ["#0F7D73", "#7651B5", "#3D73B8", "#A63D6B", "#5F7A2A", "#7A5230"];
+const LANG = {ko:"한국어",en:"영어",ja:"일본어",zh:"중국어",es:"스페인어",fr:"프랑스어",de:"독일어",yue:"광둥어"};
+const I = {
+  play:'<svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg>',
+  pause:'<svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg>',
+  pen:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>',
+  check:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
+  redo:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>',
+  down:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>',
+  trash:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
+  checkOn:'<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 12.5l4.5 4.5L18.5 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  circle:'<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
+  followOn:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3" fill="currentColor" stroke="none" opacity=".15"/><path d="M7 12.5l3 3 7-7"/></svg>',
+  followOff:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="13" rx="3"/></svg>',
+  more:'<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="18.5" cy="12" r="1.7" fill="currentColor"/></svg>',
+  undo:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"/></svg>',
+  silent:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 12h18"/></svg>',
+  stop:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg>',
+  upto:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l3.5 3.5L15 8.5M10 16l1 1 9-9"/></svg>',
+};
+
+const S = { jobs: [], sel: null, job: null, editing: null, follow: true, search: "", hits: [], status: null, filter: "all", spkPop: null,
+            mic: null, version: 0, renamingSpk: null, renamingTitle: false, hit: null };
+const au = $("#au");
+
+function mmss(t) {
+  t = Math.max(0, Math.floor(t || 0));
+  const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60;
+  return h ? `${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}` : `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+}
+function spkName(job, label) {
+  if (label == null) return "";
+  return (job.speakers || {})[label] || (/^\d+$/.test(label) ? `화자 ${label}` : label);
+}
+function speakerOrder(segs) {
+  const seen = [];
+  for (const s of segs) if (s.speaker != null && !seen.includes(s.speaker)) seen.push(s.speaker);
+  return seen;
+}
+function hueOf(order, label) { const i = order.indexOf(label); return HUES[(i < 0 ? 0 : i) % HUES.length]; }
+function toast(msg, err = false) {
+  const t = $("#toast"); t.textContent = msg; t.className = "on" + (err ? " err" : "");
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.className = "", err ? 5000 : 2200);
+}
+async function api(path, opt = {}) {
+  const r = await fetch(path, opt);
+  if (!r.ok) {
+    let m = `요청 실패 (${r.status})`;
+    try { const d = await r.json(); m = d.detail?.message || (typeof d.detail === "string" ? d.detail : m); } catch {}
+    throw new Error(m);
+  }
+  return r.headers.get("content-type")?.includes("json") ? r.json() : r.text();
+}
+const J = (method, body) => ({ method, headers: {"Content-Type": "application/json"}, body: JSON.stringify(body ?? {}) });
+
+/* ---------------- 작업 목록 ---------------- */
+function rank(j) {
+  if (j.status === "live") return 0;
+  if (j.status === "running") return 1;
+  if (j.status === "queued") return 2;
+  if (j.status === "failed") return 3;
+  if (j.status === "done" && j.n_segments && j.n_checked < j.n_segments) return 4;
+  if (j.status === "done") return 5;
+  return 6;
+}
+function jobState(j) {
+  if (j.status === "live") return `<span class="st live"><b class="lamp blink"></b>${esc(j.stage || "듣는 중")}<span class="num">${j.n_segments}줄</span></span>`;
+  if (j.status === "running") return `<span class="st run"><span class="spin"></span>${esc(j.stage || "받아 적는 중")}</span>`;
+  if (j.status === "queued") return `<span class="st mute">${j.stage ? esc(j.stage) + " 대기" : `줄에서 기다리는 중${j.queue_pos ? ` (${j.queue_pos}번째)` : ""}`}</span>`;
+  if (j.status === "failed") return `<span class="st err">받아 적지 못함</span>`;
+  if (j.status === "canceled") return `<span class="st mute">${I.stop}취소함</span>`;
+  if (!j.n_segments) return `<span class="st mute">${I.silent}말소리 없음</span>`;
+  if (j.n_checked >= j.n_segments) return `<span class="st ok">${I.check}확인 끝<span class="num">${j.n_segments}문장</span>${j.n_edited ? `<span class="r num">고침 ${j.n_edited}</span>` : ""}</span>`;
+  return `<span class="st"><span class="num">확인 ${j.n_checked}/${j.n_segments}</span>${j.n_edited ? `<span class="r num">고침 ${j.n_edited}</span>` : ""}</span>`;
+}
+function miniTape(j) {
+  const t = j.tape || [];
+  if (!t.length) return j.status === "done" && !j.n_segments && j.duration ? `<div class="mtape" aria-hidden="true" title="말소리 없음"></div>`
+    : ["canceled", "failed", "queued", "running"].includes(j.status) ? `<div class="mtape none" aria-hidden="true" title="아직 받아 적지 않음"></div>` : "";
+  const total = Math.max(j.duration || 0, ...t.map(x => x[1]), 1);
+  const order = []; for (const x of t) if (x[2] != null && !order.includes(x[2])) order.push(x[2]);
+  return `<div class="mtape" aria-hidden="true">${t.map(x => `<i class="${x[3] || j.status !== "done" ? "" : "un"}" style="left:${(x[0] / total * 100).toFixed(2)}%;width:${Math.max((x[1] - x[0]) / total * 100, .4).toFixed(2)}%;background:${x[2] == null ? (j.status === "live" ? "var(--live)" : "#8D939D") : hueOf(order, x[2])}"></i>`).join("")}</div>`;
+}
+function renderList() {
+  const lh = $("#lh"), jl = $("#jl");
+  if (S.search.length >= 2) {
+    lh.innerHTML = `찾은 문장 <span class="num">${S.hits.length}${S.hits.length >= 50 ? "+" : ""}</span>`;
+    if (!S.hits.length) { jl.innerHTML = `<li class="lempty">‘${esc(S.search)}’가 들어간 문장이 없습니다.</li>`; return; }
+    const re = new RegExp(S.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    jl.innerHTML = S.hits.map(h => `<li><button class="res" type="button" data-hit="${esc(h.job_id)}:${h.idx}">
+      <span class="rt"><span>${esc(h.title)}</span><span class="num">${mmss(h.start)}</span></span>
+      <span class="rx">${esc(h.text).replace(re, m => `<mark>${m}</mark>`)}</span></button></li>`).join("");
+    return;
+  }
+  const jobs = [...S.jobs].sort((a, b) => rank(a) - rank(b) || (b.created > a.created ? 1 : -1));
+  lh.innerHTML = `작업 <span class="num">${jobs.length}</span>`;
+  if (!jobs.length) { jl.innerHTML = `<li class="lempty">아직 받아 적은 것이 없습니다.</li>`; return; }
+  jl.innerHTML = jobs.map(j => {
+    const stem = (j.audio_name || "").replace(/\.[^.]+$/, "");
+    const src = j.origin === "a2a" ? `<b class="tag">A2A</b>${esc(j.caller || "다른 에이전트")}` :
+                j.kind === "live" ? (j.source_url ? "실시간 스트림" : "실시간 마이크") : stem === j.title ? "파일" : esc(j.audio_name || "");
+    const mm = [j.duration ? `<span class="num">${mmss(j.duration)}</span>` : "", j.n_speakers ? `<span>화자 ${j.n_speakers}</span>` : ""].join("");
+    return `<li><button class="job${j.id === S.sel ? " sel" : ""}" type="button" data-job="${j.id}" aria-current="${j.id === S.sel}">
+      <div class="jt">${esc(j.title)}</div>${miniTape(j)}<div class="jm"><span class="src">${src}</span><span class="mm">${mm}</span></div>${jobState(j)}</button></li>`;
+  }).join("");
+}
+$("#jl").addEventListener("click", e => {
+  const b = e.target.closest("[data-job]");
+  if (b) return select(b.dataset.job);
+  const h = e.target.closest("[data-hit]");
+  if (h) { const [jid, idx] = h.dataset.hit.split(":"); S.hit = {jid, idx: +idx}; select(jid, true); }
+});
+
+/* ---------------- 본문 ---------------- */
+function turnsOf(segs) {
+  const t = [];
+  for (const s of segs) {
+    const last = t[t.length - 1];
+    if (last && last.speaker === s.speaker && s.start - last.end < 1.5) last.end = Math.max(last.end, s.end);
+    else t.push({speaker: s.speaker, start: s.start, end: s.end});
+  }
+  return t;
+}
+function totalOf(j) {
+  const segEnd = Math.max(0, ...j.segments.map(s => s.end));
+  return Math.max(j.duration || 0, segEnd, 1);
+}
+function tracksHtml(j) {
+  const segs = j.segments, total = totalOf(j), order = speakerOrder(segs);
+  const turns = turnsOf(segs);
+  const pct = x => (x / total * 100).toFixed(3) + "%";
+  let lanes = "";
+  const allTalk = segs.reduce((a, s) => a + s.end - s.start, 0) || 1;
+  const blocks = list => list.map(s => `<i class="${s.checked || j.status !== "done" ? "" : "un"}" style="left:${pct(s.start)};width:${pct(Math.max(s.end - s.start, total * .002))}"></i>`).join("")
+    + list.filter(s => s.text !== s.asr_text).map(s => `<b class="et" style="left:${pct(s.start)}" title="고친 곳 ${mmss(s.start)}"></b>`).join("");
+  if (order.length) {
+    for (const k of order) {
+      const talk = segs.filter(s => s.speaker === k).reduce((a, s) => a + s.end - s.start, 0);
+      const name = spkName(j, k);
+      const label = `<button class="nm" type="button" data-spk="${esc(k)}" aria-expanded="${S.spkPop === k}" title="이름 붙이기·합치기">${esc(name)}${j.status === "done" ? I.pen : ""}</button>`
+        + (S.spkPop === k ? spkPopHtml(j, k, order) : "");
+      lanes += `<div class="ln" style="--c:${hueOf(order, k)}"><span class="lb">${label}<em class="num" title="말한 시간 ${mmss(talk)}">${Math.round(talk / allTalk * 100)}%</em></span>
+        <div class="tr" data-seek>${blocks(segs.filter(s => s.speaker === k))}</div></div>`;
+    }
+  } else {
+    const live = j.status === "live" || (j.kind === "live" && segs.some(s => s.timing === "live"));
+    lanes = `<div class="ln" style="--c:${live ? "var(--live)" : "#8D939D"}"><span class="lb"><span>${live ? "실시간" : "전체"}</span><em class="num">${mmss(segs.reduce((a, s) => a + s.end - s.start, 0))}</em></span>
+      <div class="tr${live ? " livelane" : ""}" data-seek>${blocks(segs)}</div></div>`;
+  }
+  // 눈금 간격: 트랙 폭에서 눈금 글자가 겹치지 않게 (최소 64px), 사람이 읽기 쉬운 단위 중에서
+  const trackW = Math.max(120, ($("#main")?.clientWidth || 900) - parseInt(getComputedStyle(document.documentElement).getPropertyValue("--lbw")) - 2 * parseInt(getComputedStyle(document.documentElement).getPropertyValue("--gap-edge")));
+  const step = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600].find(u => trackW / (total / u) >= 64) || 3600;
+  let ticks = "";
+  for (let t = 0; t <= total - step * .5; t += step) ticks += `<span class="${t === 0 ? "t0" : ""}" style="left:${pct(t)}">${mmss(t)}</span>`;
+  ticks += `<span class="tn" style="left:100%">${mmss(total)}</span>`;
+  const legend = j.status === "done" ? `<div class="legend" style="--c0:${order.length ? hueOf(order, order[0]) : "#8D939D"}"><span><i class="sw"></i>확인함</span><span><i class="sw un"></i>아직</span><span><i class="tk"></i>고친 곳</span><span><i class="bx"></i>아래 표에 보이는 범위</span></div>` : "";
+  return `<div class="tracks" id="tracks" style="--grid:${(step / total * 100).toFixed(4)}%">${lanes}<div class="ruler">${ticks}</div>
+    <div class="ov"><span class="view" id="view"></span><b class="head" id="head" style="left:0"></b></div></div>${legend}`;
+}
+function spkPopHtml(j, k, order) {
+  const others = order.filter(x => x !== k);
+  return `<div class="spop" role="dialog" aria-label="${esc(spkName(j, k))} 정리">
+    <label class="fl">이름<input data-spk-in="${esc(k)}" value="${esc((j.speakers || {})[k] || "")}" placeholder="${esc(spkName(j, k))}"></label>
+    ${others.length ? `<div class="fl">같은 사람이면 합치기<div class="mg">${others.map(o => `<button class="btn line sm" type="button" data-merge="${esc(o)}"><span class="dot" style="background:${hueOf(order, o)}"></span>${esc(spkName(j, o))}</button>`).join("")}</div></div>` : ""}
+    <div class="row"><small>Enter 저장, Esc 닫기</small><button class="btn fill sm" type="button" data-act="spkSave">저장</button></div></div>`;
+}
+function stagesHtml(j) {
+  const steps = j.kind === "live" ? ["최종본 만드는 중"] : j.speakers_on ? ["소리 꺼내는 중", "화자 나누는 중", "받아 적는 중"] : ["소리 꺼내는 중", "받아 적는 중"];
+  const cur = steps.indexOf(j.stage);
+  const label = s => s.replace(" 중", "").replace("만드는", "만들기");
+  const el = j.started && j.status === "running" ? `<span class="el num" data-elapsed="${esc(j.started)}"></span>` : "";
+  return `<div class="stages" aria-live="polite">${j.status === "queued" && j.kind !== "live"
+    ? `<b>줄에서 기다리는 중${j.queue_pos ? ` — ${j.queue_pos}번째` : ""}</b>`
+    : steps.map((s, i) => `${i ? '<span class="sep"></span>' : ""}<b class="${i === cur ? "now" : i < cur ? "done" : ""}">${label(s)}</b>`).join("")}${el}</div>`;
+}
+function metaHtml(j) {
+  const m = [], tech = [];
+  if (j.language || j.lang) m.push(`<span>${LANG[j.language || j.lang] || esc(j.language || j.lang)}</span>`);
+  if (j.n_speakers) m.push(`<span>화자 ${j.n_speakers}</span>`);
+  if (j.n_segments) {
+    m.push(`<span class="num">${j.n_segments}문장</span>`);
+    if (j.status === "done") {
+      m.push(`<span class="num ${j.n_checked >= j.n_segments ? "ok" : ""}">확인 ${j.n_checked}</span>`);
+      if (j.n_edited) m.push(`<span class="num r">고침 ${j.n_edited}</span>`);
+    }
+  }
+  if (j.origin === "a2a") m.push(`<span><b class="tag">A2A</b> ${esc(j.caller || "다른 에이전트")}에서 맡김</span>`);
+  if (j.model) tech.push(`<span>${esc(j.model.split("/").pop())}</span>`);
+  if (j.diarizer) tech.push(`<span>화자 분리 DiariZen</span>`);
+  if (j.created) { const [, mo, d, hm] = j.created.match(/^\d{4}-(\d\d)-(\d\d) (\d\d:\d\d)/) || []; if (mo) tech.push(`<span class="num">${+mo}월 ${+d}일 ${hm}</span>`); }
+  return m.join("") + (tech.length ? `<span class="tech">${tech.join("")}</span>` : "");
+}
+function notesHtml(j) {
+  let n = "";
+  if (j.status === "failed") n += `<div class="note err"><span>${esc(j.error || "받아 적지 못했습니다")}${j.error_kind === "no_engine" && S.status?.hint ? "" : ""}</span>
+      <span class="acts"><button class="btn line sm" type="button" data-act="retry">다시 시도</button></span></div>`;
+  if (j.status === "canceled") n += `<div class="note warn"><span>취소한 작업입니다.</span><span class="acts"><button class="btn line sm" type="button" data-act="retry">다시 받아 적기</button></span></div>`;
+  if (j.warning && j.status !== "live") n += `<div class="note warn"><span>${esc(j.warning)}</span></div>`;
+  return n;
+}
+function primaryHtml(j) {
+  if (j.status !== "done" || !j.segments.length) return "";
+  const todo = j.segments.filter(s => !s.checked).length;
+  return todo ? `<button class="btn fill sm" type="button" data-act="nextTodo" title="단축키 N">다음 확인 안 한 줄<kbd class="inv">N</kbd></button>`
+    : `<a class="btn fill sm" href="/api/jobs/${j.id}/export?fmt=txt">${I.down}글 내려받기</a>`;
+}
+function liveBarHtml(j) {
+  const mine = S.mic && S.mic.jid === j.id;
+  return `<div class="bar2 live"><span class="lamp blink"></span><b>${esc(j.stage)}</b><span class="num el2" data-elapsed="${esc(j.started || "")}" data-label="녹음"></span>
+    ${mine ? '<span class="lvlw">입력<span class="level" title="마이크 입력 크기"><i id="lvl"></i></span></span>' : `<span class="hint">${j.source_url ? "스트림" : "다른 창의 마이크"}</span>`}
+    <span class="hint">말이 쉬면 줄을 나눕니다 (쉬지 않으면 15초쯤에서)</span><span class="sp"></span>
+    <button class="btn quiet sm" type="button" data-act="stopRaw">최종본 없이 멈추기</button><button class="btn fill sm" type="button" data-act="stop">끝내고 최종본 만들기</button></div>`;
+}
+function renderMain(keepScroll = true) {
+  const main = $("#main");
+  const j = S.job;
+  if (!S.jobs.length && !j) { renderFirst(); return; }
+  if (!j) { main.innerHTML = `<div class="tempty"><h2>작업을 고르세요</h2>왼쪽 목록에서 받아 적은 녹음을 고르면 여기서 듣고 확인·고칠 수 있습니다.</div>`; return; }
+  const sc = $("#scroll")?.scrollTop ?? 0;
+  const busy = ["queued", "running"].includes(j.status);
+  const hasAudio = j.status !== "failed" || j.duration;
+  const canPlay = j.segments.length && hasAudio && j.status !== "live";
+  const titleEl = S.renamingTitle
+    ? `<input class="title-in" id="titleIn" value="${esc(j.title)}" aria-label="제목">`
+    : `<h1 class="title" id="title" tabindex="0" title="눌러서 제목 고치기">${esc(j.title)}${I.pen}</h1>`;
+  const right = busy ? `<button class="btn line sm" type="button" data-act="cancel">취소</button>`
+    : j.status === "live" ? "" : `<div class="menu" id="dlMenu"><button class="btn line sm" type="button" data-act="dl" aria-haspopup="true" ${j.segments.length ? "" : "disabled"}>${I.down}내려받기</button>
+      <div class="pop" role="menu"><a role="menuitem" href="/api/jobs/${j.id}/export?fmt=txt">글 <small>.txt 시각·화자 포함</small></a><a role="menuitem" href="/api/jobs/${j.id}/export?fmt=srt">자막 <small>.srt</small></a><a role="menuitem" href="/api/jobs/${j.id}/export?fmt=json">구간 <small>.json</small></a></div></div>
+      <div class="menu" id="moreMenu"><button class="icon-btn" type="button" data-act="more" aria-haspopup="true" aria-expanded="false" aria-label="작업 더 보기" title="작업 더 보기">${I.more}</button>
+      <div class="pop" role="menu"><button role="menuitem" type="button" data-act="retranscribe"><span>${I.redo} 전체 다시 받아 적기</span><small>고친 곳·확인이 사라짐</small></button>
+      <button role="menuitem" type="button" data-act="delete"><span>${I.trash} 작업 지우기</span><small>녹음 파일까지</small></button></div></div>`;
+  const showTracks = j.segments.length || j.status === "live";
+  main.innerHTML = `<div class="jhead">
+      <div class="trow">${titleEl}</div>
+      <div class="meta">${metaHtml(j)}</div>
+      ${notesHtml(j)}
+      ${showTracks ? tracksHtml(j) : ""}
+      ${busy && showTracks ? stagesHtml(j) : ""}
+      ${j.status === "live" ? liveBarHtml(j) : busy && !showTracks ? `<div class="bar2 solo">${stagesHtml(j)}<span class="sp"></span>${right}</div>` : `<div class="bar2">
+        <button class="pb" id="pb" type="button" aria-label="재생" title="재생·멈춤 (Space)" ${canPlay ? "" : "disabled"}>${au.paused ? I.play : I.pause}</button>
+        <span class="tm num" id="tm"><b>${mmss(au.currentTime)}</b> / ${mmss(totalOf(j))}</span>
+        <button class="btn line sm spd" type="button" data-act="speed" ${canPlay ? "" : "disabled"} title="재생 속도 바꾸기" aria-label="재생 속도 ${au.playbackRate}배">${au.playbackRate}×</button>
+        <button class="btn line sm follow" type="button" data-act="follow" ${canPlay ? "" : "disabled"} aria-pressed="${S.follow}" title="재생하는 줄을 따라 표를 넘김">${S.follow ? I.followOn : I.followOff}재생 따라가기</button>
+        <span class="sp"></span>${right}${primaryHtml(j)}
+      </div>`}</div>
+    ${tbarHtml(j)}<div class="scroll" id="scroll">${bodyHtml(j)}</div>`;
+  if (keepScroll) $("#scroll").scrollTop = sc;
+  if (S.renamingTitle) { const i = $("#titleIn"); i.focus(); i.select(); }
+  if (S.renamingSpk != null) { const i = $(`[data-spk-in="${CSS.escape(S.renamingSpk)}"]`); i?.focus(); i?.select(); }
+  if (S.editing != null) { const t = $("#edT"); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }
+  updateView(); tick(); elapsed();
+}
+function tbarHtml(j) {
+  if (j.status !== "done" || !j.segments.length) return "";
+  const n = j.segments.length, todo = j.segments.filter(s => !s.checked).length, ed = j.segments.filter(s => s.text !== s.asr_text).length;
+  const tab = (k, label, c) => `<button class="tab${S.filter === k ? " on" : ""}" type="button" role="tab" aria-selected="${S.filter === k}" data-filter="${k}">${label}<span class="num">${c}</span></button>`;
+  return `<div class="tbar"><div class="tabs" role="tablist" aria-label="문장 보기">${tab("all", "모든 문장", n)}${tab("todo", "확인 안 함", todo)}${tab("edited", "고친 문장", ed)}</div>
+    </div>`;
+}
+function visibleSegs(j) {
+  if (S.filter === "todo") return j.segments.filter(s => !s.checked);
+  if (S.filter === "edited") return j.segments.filter(s => s.text !== s.asr_text);
+  return j.segments;
+}
+function bodyHtml(j) {
+  if (!j.segments.length) {
+    if (j.status === "queued" || j.status === "running")
+      return `<table class="segs skel" aria-hidden="true">${Array.from({length: 6}, () => `<tr><td class="t"><span style="width:36px"></span></td><td class="w"><span style="width:60px"></span></td><td class="x"><span style="width:${50 + Math.random() * 40}%"></span></td><td class="c"></td></tr>`).join("")}</table>`;
+    if (j.status === "live") return `<div class="tempty"><h2>듣고 있습니다</h2>말을 시작하면 말이 멈출 때마다 여기에 줄이 생깁니다.</div>`;
+    if (j.status === "done") return `<div class="tempty"><h2>말소리를 찾지 못했습니다</h2>음악이나 무음만 있는 녹음일 수 있습니다. 소리가 있었다면 언어를 정해 전체 다시 받아 적기를 해 보세요.</div>`;
+    return `<div class="tempty"><h2>받아 적은 문장이 없습니다</h2>위의 안내를 확인하고 다시 시도하세요.</div>`;
+  }
+  const order = speakerOrder(j.segments), done = j.status === "done", rows = visibleSegs(j);
+  if (!rows.length) return `<div class="tempty"><h2>${S.filter === "todo" ? "모든 문장을 확인했습니다" : "고친 문장이 없습니다"}</h2>${S.filter === "todo" ? "내려받기로 글·자막을 가져갈 수 있습니다." : "문장에 마우스를 올려 고치기를 누르면 여기에 모입니다."}</div>`;
+  return `<table class="segs${done ? "" : " nochk"}"><tbody>${rows.map(s => {
+    const edited = s.text !== s.asr_text, redo = (j.redoing || []).includes(s.idx);
+    const cls = [S.hit && S.hit.jid === j.id && S.hit.idx === s.idx ? "hit" : "", redo ? "redo" : ""].join(" ");
+    const tcls = s.timing === "piece" ? "" : s.timing === "live" ? "live" : "est";
+    const who = s.speaker != null ? `<span class="dot" style="background:${hueOf(order, s.speaker)}"></span><span class="wn">${esc(spkName(j, s.speaker))}</span>` : "";
+    let text;
+    if (S.editing === s.idx) {
+      text = `<div class="ed"><textarea id="edT" aria-label="${mmss(s.start)} 문장 고치기">${esc(s.text)}</textarea>
+        <div class="row"><button class="btn fill sm" type="button" data-act="save">저장</button><button class="btn quiet sm" type="button" data-act="cancelEdit">취소</button>
+        <small>Enter 저장, Esc 취소</small></div>${edited ? `<span class="orig">받아 적은 글: ${esc(s.asr_text)}</span>` : ""}</div>`;
+    } else {
+      text = (redo ? '<span class="spin"></span>' : "") + (edited ? diffHtml(s.asr_text, s.text) : esc(s.text));
+      if (done) text += `<span class="racts" role="group" aria-label="문장 동작">
+        <button type="button" data-act="playFrom">${I.play.replace('width="15" height="15"', 'width="11" height="11"')}여기부터 재생</button>
+        <button type="button" data-act="edit">${I.pen}고치기</button>
+        <button type="button" data-act="checkUpTo">${I.upto}여기까지 확인</button>
+        ${edited ? `<button type="button" data-act="revert">${I.undo}원래 글로</button>` : ""}
+        <button type="button" data-act="redo" ${redo ? "disabled" : ""}>${I.redo}이 구간 다시 받아 적기</button></span>`;
+    }
+    const chk = `<td class="c">${done ? `<button class="chk${s.checked ? " on" : ""}" type="button" data-act="check" aria-pressed="${!!s.checked}" aria-label="${mmss(s.start)} 확인" title="${s.checked ? "확인함 — 누르면 취소" : "확인하기"}">${s.checked ? I.checkOn : I.circle}</button>` : ""}</td>`;
+    return `<tr data-idx="${s.idx}" class="${cls}">${chk}<td class="t num ${tcls}" title="${s.timing === "piece" ? "조각 경계 시각" : s.timing === "live" ? "실시간 줄 (최종본에서 바뀜)" : "추정 시각"}">${s.speaker != null ? `<span class="tdot" style="background:${hueOf(order, s.speaker)}" title="${esc(spkName(j, s.speaker))}"></span>` : ""}<span class="ap" aria-hidden="true">${tcls === "est" ? "≈" : ""}</span>${mmss(s.start)}</td>
+      <td class="w">${who}</td><td class="x">${text}</td></tr>`;
+  }).join("")}</tbody></table>${j.status === "live" ? `<div class="ltail" aria-hidden="true"><span class="lamp blink"></span>다음 줄을 듣는 중</div>` : ""}`;
+}
+function diffHtml(a, b) {
+  // 단어 단위로 앞뒤 같은 부분을 빼고 가운데만 고친 표시 (지운 것 빨간 줄, 넣은 것 빨강)
+  const A = a.split(/(\s+)/), B = b.split(/(\s+)/);
+  let i = 0; while (i < A.length && i < B.length && A[i] === B[i]) i++;
+  let ja = A.length - 1, jb = B.length - 1; while (ja >= i && jb >= i && A[ja] === B[jb]) { ja--; jb--; }
+  const pre = esc(A.slice(0, i).join("")), post = esc(A.slice(ja + 1).join(""));
+  const del = A.slice(i, ja + 1).join(""), ins = B.slice(i, jb + 1).join("");
+  return `${pre}${del.trim() ? `<del>${esc(del)}</del>` : ""}${ins.trim() ? `${del.trim() ? " " : ""}<ins>${esc(ins)}</ins>` : ""}${post}`;
+}
+function renderFirst() {
+  $("#main").innerHTML = `<div class="first"><h2>녹음을 글로 받아 적습니다</h2>
+    <p>이 PC의 모델로 받아 적고, 화자를 나누고, 문장마다 시각을 붙입니다. 소리는 이 PC 밖으로 나가지 않습니다.</p>
+    <div class="drop" id="drop1"><span>소리·영상 파일을 여기에 끌어 놓거나</span>
+      <div class="ways"><button class="btn fill" type="button" data-act="openUp">파일 올리기</button><button class="btn line" type="button" data-act="openLive">실시간 받아 적기</button></div></div>
+    <ul><li>받아 적은 뒤 문장을 누르면 그 시각부터 들으며 확인하고 고칠 수 있습니다.</li>
+    <li>다른 에이전트도 A2A 로 맡길 수 있고, 맡긴 일은 이 목록에 같이 보입니다.</li></ul></div>`;
+}
+
+/* ---------------- 재생 ---------------- */
+function curIdx(t) {
+  const segs = S.job?.segments || [];
+  let lo = 0, hi = segs.length - 1, ans = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (segs[m].start <= t + 0.05) { ans = m; lo = m + 1; } else hi = m - 1; }
+  return ans;
+}
+let lastNow = -2;
+function tick() {
+  const j = S.job; if (!j) return;
+  const t = au.currentTime, total = totalOf(j);
+  const head = $("#head"); if (head) { head.style.left = (Math.min(t, total) / total * 100) + "%"; head.dataset.t = mmss(t); }
+  const tm = $("#tm"); if (tm) tm.innerHTML = `<b>${mmss(t)}</b> / ${mmss(total)}`;
+  const i = curIdx(t);
+  if (i !== lastNow) {
+    document.querySelectorAll(".segs tr.now").forEach(r => r.classList.remove("now"));
+    const row = i >= 0 ? $(`.segs tr[data-idx="${j.segments[i].idx}"]`) : null;
+    if (row) { row.classList.add("now"); if (S.follow && !au.paused && S.editing == null) row.scrollIntoView({block: "nearest", behavior: "smooth"}); }
+    lastNow = i;
+  }
+}
+function loop() { tick(); if (!au.paused) requestAnimationFrame(loop); }
+au.addEventListener("play", () => { setPb(); requestAnimationFrame(loop); });
+au.addEventListener("pause", setPb);
+au.addEventListener("seeked", tick);
+function setPb() { const b = $("#pb"); if (b) { b.innerHTML = au.paused ? I.play : I.pause; b.setAttribute("aria-label", au.paused ? "재생" : "멈춤"); } }
+function seek(t, play = true) {
+  if (!S.job) return;
+  au.currentTime = Math.max(0, t);
+  lastNow = -2; tick();
+  if (play) au.play().catch(() => toast("소리를 재생할 수 없습니다", true));
+}
+function updateView() {
+  const sc = $("#scroll"), v = $("#view"), j = S.job;
+  if (!sc || !v || !j || !j.segments.length) { if (v) v.style.display = "none"; return; }
+  const rows = sc.querySelectorAll(".segs tr"), top = sc.scrollTop, bot = top + sc.clientHeight;
+  let a = null, b = null;
+  for (const r of rows) { const y = r.offsetTop, h = r.offsetHeight; if (y + h > top && y < bot) { const s = j.segments.find(x => x.idx === +r.dataset.idx); if (!s) continue; if (a === null) a = s.start; b = s.end; } }
+  if (a === null) { v.style.display = "none"; return; }
+  const total = totalOf(j);
+  v.style.display = ""; v.style.left = (a / total * 100) + "%"; v.style.width = (Math.max(b - a, 0) / total * 100) + "%";
+}
+function elapsed() {
+  for (const el of document.querySelectorAll("[data-elapsed]")) {
+  if (!el.dataset.elapsed) continue;
+  const t0 = new Date(el.dataset.elapsed.replace(" ", "T")).getTime();
+  el.textContent = el.dataset.label ? `${el.dataset.label} ${mmss((Date.now() - t0) / 1000)}` : `${mmss((Date.now() - t0) / 1000)} 지남`;
+  }
+}
+setInterval(elapsed, 1000);
+
+/* ---------------- 본문 동작 ---------------- */
+$("#main").addEventListener("scroll", updateView, true);
+$("#main").addEventListener("click", async e => {
+  const j = S.job;
+  const act = e.target.closest("[data-act]")?.dataset.act;
+  const row = e.target.closest(".segs tr");
+  const idx = row ? +row.dataset.idx : null;
+  const seg = j && idx != null ? j.segments.find(s => s.idx === idx) : null;
+  try {
+    if (act === "openUp") return openUp();
+    if (act === "openLive") return openLive();
+    if (!j) return;
+    if (e.target.closest("#pb")) { if (au.paused) { if (au.currentTime >= totalOf(j) - .2) au.currentTime = 0; au.play().catch(() => toast("소리를 재생할 수 없습니다", true)); } else au.pause(); return; }
+    if (e.target.closest("#title")) { S.renamingTitle = true; return renderMain(); }
+    const tabb = e.target.closest("[data-filter]"); if (tabb) { S.filter = tabb.dataset.filter; S.editing = null; renderMain(false); $("#scroll").scrollTop = 0; return; }
+    if (act === "nextTodo") return nextTodo();
+    if (act === "speed") { const v = [0.75, 1, 1.25, 1.5, 2]; au.playbackRate = v[(v.indexOf(au.playbackRate) + 1) % v.length]; const b = e.target.closest("button"); b.textContent = `${au.playbackRate}×`; b.setAttribute("aria-label", `재생 속도 ${au.playbackRate}배`); return; }
+    if (act === "follow") { S.follow = !S.follow; const b = e.target.closest("button"); b.setAttribute("aria-pressed", S.follow); b.innerHTML = `${S.follow ? I.followOn : I.followOff}재생 따라가기`; return; }
+    const mg = e.target.closest("[data-merge]");
+    if (mg && S.spkPop != null) {
+      const from = S.spkPop, into = mg.dataset.merge, n = j.segments.filter(s => s.speaker === from).length;
+      if (!await confirmBox("화자 합치기", `‘${esc(spkName(j, from))}’의 문장 ${n}개를 ‘${esc(spkName(j, into))}’로 옮깁니다. 되돌리려면 전체 다시 받아 적기를 해야 합니다.`, "합치기")) return;
+      S.spkPop = null; S.renamingSpk = null;
+      await api(`/api/jobs/${j.id}/speakers/${encodeURIComponent(from)}/merge`, J("POST", {into})); toast("화자를 합쳤습니다"); return refresh(j.id);
+    }
+    if (act === "spkSave") { $(`[data-spk-in]`)?.blur(); return; }
+    const spk = e.target.closest("[data-spk]");
+    if (spk) { const k = spk.dataset.spk; S.spkPop = S.spkPop === k || j.status !== "done" ? null : k; S.renamingSpk = S.spkPop; return renderMain(); }
+    if (S.spkPop != null && !e.target.closest(".spop")) { S.spkPop = null; S.renamingSpk = null; return renderMain(); }
+    const tr = e.target.closest("[data-seek]");
+    if (tr && !act) { const r = tr.getBoundingClientRect(); const t = (e.clientX - r.left) / r.width * totalOf(j); seek(t, false); const i = curIdx(t); if (i >= 0) $(`.segs tr[data-idx="${j.segments[i].idx}"]`)?.scrollIntoView({block: "center"}); return; }
+    if (act === "dl" || act === "more") {
+      const m = $(act === "dl" ? "#dlMenu" : "#moreMenu"), open = !m.classList.contains("open");
+      document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open"));
+      m.classList.toggle("open", open); m.querySelector("[aria-haspopup]")?.setAttribute("aria-expanded", open);
+      if (open) m.querySelector("[role=menuitem]")?.focus();
+      return;
+    }
+    if (act === "retranscribe" || act === "delete") $("#moreMenu")?.classList.remove("open");
+    if (act === "cancel") { await api(`/api/jobs/${j.id}/cancel`, {method: "POST"}); toast("취소했습니다"); return refresh(j.id); }
+    if (act === "retry") { await api(`/api/jobs/${j.id}/retranscribe`, {method: "POST"}); return refresh(j.id); }
+    if (act === "retranscribe") {
+      const lost = [j.n_edited ? `고친 ${j.n_edited}곳` : "", j.n_checked ? `확인 표시 ${j.n_checked}개` : "", Object.keys(j.speakers || {}).length ? "화자 이름" : ""].filter(Boolean);
+      if (!await confirmBox("전체 다시 받아 적기", lost.length ? `${lost.join(", ")}이 사라지고 새로 받아 적은 글로 바뀝니다.` : "처음부터 다시 받아 적습니다.", "다시 받아 적기")) return;
+      au.pause(); await api(`/api/jobs/${j.id}/retranscribe`, {method: "POST"}); return refresh(j.id);
+    }
+    if (act === "delete") {
+      if (!await confirmBox("작업 지우기", `‘${esc(j.title)}’의 받아 적은 글과 녹음 파일을 지웁니다. 되돌릴 수 없습니다.`, "지우기")) return;
+      au.pause(); au.removeAttribute("src"); await api(`/api/jobs/${j.id}`, {method: "DELETE"}); toast("지웠습니다");
+      S.sel = null; S.job = null; history.replaceState(null, "", "#"); return loadJobs();
+    }
+    if (act === "stop" || act === "stopRaw") {
+      if (S.mic && S.mic.jid === j.id) await stopMic(act === "stop");
+      else await api(`/api/live/${j.id}/stop?final=${act === "stop"}`, {method: "POST"});
+      return refresh(j.id);
+    }
+    if (!seg) return;
+    if (act === "check") { const s = await api(`/api/jobs/${j.id}/segments/${idx}`, J("PATCH", {checked: !seg.checked})); Object.assign(seg, s); return refresh(j.id); }
+    if (act === "checkUpTo") { await api(`/api/jobs/${j.id}/check-until/${idx}`, {method: "POST"}); toast(`${mmss(seg.start)}까지 확인했습니다`); return refresh(j.id); }
+    if (act === "edit") { S.editing = idx; au.pause(); return renderMain(); }
+    if (act === "cancelEdit") { S.editing = null; return renderMain(); }
+    if (act === "save") return saveEdit();
+    if (act === "revert") { await api(`/api/jobs/${j.id}/segments/${idx}/revert`, {method: "POST"}); toast("받아 적은 글로 되돌렸습니다"); return refresh(j.id); }
+    if (act === "redo") { await api(`/api/jobs/${j.id}/segments/${idx}/redo`, {method: "POST"}); toast("이 구간을 다시 받아 적는 중입니다"); return refresh(j.id); }
+    if (act === "playFrom") return seek(seg.start, true);
+    if (row && S.editing == null && !e.target.closest("button, textarea, a")) return seek(seg.start, true);
+  } catch (err) { toast(err.message, true); }
+});
+function nextTodo() {
+  const j = S.job; if (!j) return;
+  const from = Math.max(lastNow, -1);
+  const segs = j.segments, n = segs.length;
+  for (let k = 1; k <= n; k++) {
+    const s = segs[(from + k) % n];
+    if (!s.checked) {
+      au.pause(); au.currentTime = s.start; lastNow = -2; tick();
+      const row = $(`.segs tr[data-idx="${s.idx}"]`);
+      if (row) { row.scrollIntoView({block: "center"}); row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); }
+      return;
+    }
+  }
+}
+async function saveEdit() {
+  const j = S.job, t = $("#edT"); if (!j || !t) return;
+  try {
+    await api(`/api/jobs/${j.id}/segments/${S.editing}`, J("PATCH", {text: t.value}));
+    S.editing = null; toast("고친 문장을 저장했습니다"); await refresh(j.id);
+  } catch (err) { toast(err.message, true); }
+}
+$("#main").addEventListener("keydown", async e => {
+  const enter = e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey;
+  if (e.target.id === "edT") {
+    if (e.key === "Escape") { S.editing = null; renderMain(); return; }
+    if (enter) { e.preventDefault(); if (e.isComposing || e.keyCode === 229) return; saveEdit(); }
+    return;
+  }
+  if (e.target.id === "titleIn") {
+    if (e.key === "Escape") { S.renamingTitle = false; renderMain(); return; }
+    if (enter) { e.preventDefault(); if (e.isComposing || e.keyCode === 229) return; e.target.blur(); }
+    return;
+  }
+  if (e.target.dataset.spkIn !== undefined) {
+    if (e.key === "Escape") { S.renamingSpk = null; S.spkPop = null; renderMain(); return; }
+    if (enter) { e.preventDefault(); if (e.isComposing || e.keyCode === 229) return; e.target.blur(); }
+    return;
+  }
+  if (e.target.id === "title" && enter) { S.renamingTitle = true; renderMain(); }
+});
+$("#main").addEventListener("focusout", async e => {
+  const j = S.job; if (!j) return;
+  try {
+    if (e.target.id === "titleIn" && S.renamingTitle) {
+      S.renamingTitle = false; const v = e.target.value.trim();
+      if (v && v !== j.title) { await api(`/api/jobs/${j.id}`, J("PATCH", {title: v})); toast("제목을 바꿨습니다"); }
+      return refresh(j.id);
+    }
+    if (e.target.dataset.spkIn !== undefined && S.renamingSpk != null) {
+      if (e.relatedTarget && e.relatedTarget.closest(".spop") && !e.relatedTarget.matches('[data-act="spkSave"]')) return;   // 합치기 버튼으로 옮겨 감
+      const label = S.renamingSpk; S.renamingSpk = null; S.spkPop = null;
+      await api(`/api/jobs/${j.id}/speakers/${encodeURIComponent(label)}`, J("PUT", {name: e.target.value}));
+      return refresh(j.id);
+    }
+  } catch (err) { toast(err.message, true); }
+});
+$("#main").addEventListener("change", e => {
+
+});
+document.addEventListener("click", e => { document.querySelectorAll(".menu.open").forEach(m => { if (!m.contains(e.target)) m.classList.remove("open"); }); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") document.querySelectorAll(".menu.open").forEach(m => { m.classList.remove("open"); m.querySelector("[aria-haspopup]")?.focus(); }); });
+document.addEventListener("keydown", e => {
+  if ((e.key === "n" || e.key === "N") && S.job?.status === "done" && !e.target.closest("input, textarea, select, [contenteditable]") && !document.querySelector("dialog[open]")) { e.preventDefault(); nextTodo(); }
+  if (e.key === " " && S.job && !e.target.closest("input, textarea, select, button, [contenteditable]") && !document.querySelector("dialog[open]")) {
+    e.preventDefault(); $("#pb")?.click();
+  }
+});
+
+/* ---------------- 불러오기 ---------------- */
+async function loadJobs() {
+  S.jobs = await api("/api/jobs");
+  if (!S.sel && S.jobs.length) {
+    const want = new URLSearchParams(location.hash.slice(1)).get("job");
+    const first = [...S.jobs].sort((a, b) => rank(a) - rank(b) || (b.created > a.created ? 1 : -1))[0];
+    S.sel = S.jobs.some(j => j.id === want) ? want : first.id;
+  }
+  if (S.sel && !S.jobs.some(j => j.id === S.sel)) { S.sel = null; S.job = null; }
+  renderList();
+  if (S.sel && (!S.job || S.job.id !== S.sel)) await select(S.sel, false);
+  else if (!S.sel) renderMain();
+}
+async function select(jid, fromHit = false) {
+  const changed = !S.job || S.job.id !== jid;
+  S.sel = jid; S.editing = null; S.renamingSpk = null; S.renamingTitle = false; S.spkPop = null;
+  if (!S.job || S.job.id !== jid) S.filter = "all";
+  if (!fromHit) S.hit = null;
+  history.replaceState(null, "", `#job=${jid}`);
+  try { S.job = await api(`/api/jobs/${jid}`); } catch (err) { toast(err.message, true); return; }
+  if (changed) { au.pause(); lastNow = -2; if (S.job.status !== "live" && S.job.duration) au.src = `/api/jobs/${jid}/audio`; else au.removeAttribute("src"); au.currentTime = 0; }
+  renderList(); renderMain(false);
+  if (S.hit && S.hit.jid === jid) {
+    const s = S.job.segments.find(x => x.idx === S.hit.idx);
+    if (s) { au.currentTime = s.start; tick(); $(`.segs tr[data-idx="${s.idx}"]`)?.scrollIntoView({block: "center"}); }
+  } else $("#scroll")?.scrollTo(0, 0);
+}
+async function refresh(jid) {
+  if (!S.job || S.job.id !== jid) return;
+  const wasLive = S.job.status === "live", hadAudio = !!au.getAttribute("src");
+  S.job = await api(`/api/jobs/${jid}`);
+  const i = S.jobs.findIndex(x => x.id === jid); if (i >= 0) S.jobs[i] = {...S.jobs[i], ...S.job};
+  if (S.job.status !== "live" && S.job.duration && (!hadAudio || wasLive)) { au.src = `/api/jobs/${jid}/audio`; }
+  if (S.editing != null || S.renamingSpk != null || S.renamingTitle) { renderList(); return; }   // 입력 중에는 본문을 다시 그리지 않는다
+  const sc = $("#scroll"); const atBottom = sc && sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 30;
+  renderList(); renderMain();
+  if (S.job.status === "live" && atBottom) { const s = $("#scroll"); s.scrollTop = s.scrollHeight; }
+}
+async function loadStatus(fresh = false) {
+  try { S.status = await api(`/api/status${fresh ? "?fresh=1" : ""}`); } catch { return; }
+  const e = $("#eng"), ok = S.status.ok;
+  e.className = "eng" + (ok ? "" : " off");
+  e.querySelector("span").textContent = ok ? "받아 적기 준비됨" : "엔진 꺼짐 — 이유 보기";
+  e.title = ok ? `${S.status.asr.join(", ")}${S.status.diarizer ? " + 화자 분리 " + S.status.diarizer : ""} — 누르면 자세히` : S.status.hint;
+}
+$("#eng").addEventListener("click", async () => {
+  await loadStatus(true);
+  const st = S.status; if (!st) return;
+  const lines = st.selection.map(t => `<li><b>${esc(t.engine)}</b>${t.role ? " (화자 분리)" : ""} — ${t.why_not ? esc(t.why_not) : "쓸 수 있음"}</li>`).join("");
+  confirmBox(st.ok ? "엔진 상태" : "엔진 꺼짐", `${st.ok ? "" : `<p>${esc(st.hint)}</p>`}<ul style="padding-left:18px;margin:6px 0">${lines}</ul><p style="font-size:12.5px">정확도 순서로 조건(언어·모델·환경·GPU 여유)을 통과한 첫 엔진을 씁니다.</p>`, "닫기", true);
+});
+function connectEvents() {
+  const es = new EventSource("/api/events");
+  es.onopen = () => $("#conn").classList.remove("on");
+  es.onerror = () => $("#conn").classList.add("on");
+  es.onmessage = async ev => {
+    const d = JSON.parse(ev.data);
+    if (d.v === S.version) return; S.version = d.v;
+    try {
+      S.jobs = await api("/api/jobs");
+      if (S.sel && !S.jobs.some(j => j.id === S.sel)) { S.sel = null; S.job = null; renderList(); renderMain(); return; }
+      if (!S.sel && S.jobs.length) return loadJobs();
+      if (S.sel && (d.jobs.includes(S.sel) || !d.jobs.length)) await refresh(S.sel); else renderList();
+    } catch {}
+  };
+}
+
+/* ---------------- 검색 ---------------- */
+let qT;
+$("#q").addEventListener("input", e => {
+  S.search = e.target.value.trim(); $("#searchBox").classList.toggle("has", !!e.target.value);
+  clearTimeout(qT);
+  qT = setTimeout(async () => { S.hits = S.search.length >= 2 ? await api(`/api/search?q=${encodeURIComponent(S.search)}`) : []; renderList(); }, 250);
+});
+$("#q").addEventListener("keydown", e => { if (e.key === "Escape") $("#qClear").click(); });
+$("#qClear").addEventListener("click", () => { $("#q").value = ""; S.search = ""; S.hits = []; S.hit = null; $("#searchBox").classList.remove("has"); renderList(); if (S.job) renderMain(); $("#q").focus(); });
+
+/* ---------------- 대화창 ---------------- */
+function confirmBox(title, html, go, only = false) {
+  const d = $("#dConfirm"); $("#dcH").textContent = title; $("#dcB").innerHTML = html; $("#dcGo").textContent = go;
+  d.querySelector('[value="no"]').hidden = only; d.returnValue = "";
+  d.showModal();
+  return new Promise(res => d.addEventListener("close", () => res(d.returnValue === "yes"), {once: true}));
+}
+let upFiles = [];
+function setFiles(fs) {
+  upFiles = [...fs].filter(f => f.size > 0);
+  $("#fileList").innerHTML = upFiles.map(f => `<span>${esc(f.name)} <span class="num" style="color:var(--mute)">${(f.size / 1048576).toFixed(1)}MB</span></span>`).join("");
+  $("#upGo").disabled = !upFiles.length; $("#upErr").textContent = fs.length && !upFiles.length ? "빈 파일입니다" : "";
+}
+function openUp(files) { setFiles(files || []); $("#dUp").showModal(); }
+$("#bUp").addEventListener("click", () => openUp());
+$("#fileIn").addEventListener("change", e => setFiles(e.target.files));
+$("#upGo").addEventListener("click", async () => {
+  const fd = new FormData(); upFiles.forEach(f => fd.append("files", f));
+  fd.append("lang", $("#uLang").value); fd.append("context", $("#uCtx").value); fd.append("num_speakers", $("#uSpk").value); fd.append("speakers", $("#uDia").checked ? "1" : "0");
+  const b = $("#upGo"); b.disabled = true; b.textContent = "올리는 중…";
+  try {
+    const jobs = await api("/api/jobs", {method: "POST", body: fd});
+    $("#dUp").close(); $("#fileIn").value = ""; $("#uCtx").value = "";
+    toast(`${jobs.length}개를 줄에 넣었습니다`);
+    S.jobs = await api("/api/jobs"); await select(jobs[0].id);
+  } catch (err) { $("#upErr").textContent = err.message; }
+  finally { b.textContent = "받아 적기 시작"; b.disabled = !upFiles.length; }
+});
+for (const z of ["drop2"]) {
+  const el = $("#" + z);
+  el.addEventListener("dragover", e => { e.preventDefault(); el.classList.add("over"); });
+  el.addEventListener("dragleave", () => el.classList.remove("over"));
+  el.addEventListener("drop", e => { e.preventDefault(); el.classList.remove("over"); setFiles(e.dataTransfer.files); });
+}
+document.addEventListener("dragover", e => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); $("#drop1")?.classList.add("over"); } });
+document.addEventListener("dragleave", e => { if (!e.relatedTarget) $("#drop1")?.classList.remove("over"); });
+document.addEventListener("drop", e => { if (!e.dataTransfer?.files?.length || $("#dUp").open) return; e.preventDefault(); $("#drop1")?.classList.remove("over"); openUp(e.dataTransfer.files); });
+
+function openLive() { $("#liveErr").textContent = ""; $("#dLive").showModal(); }
+$("#bLive").addEventListener("click", openLive);
+$("#dLive").addEventListener("change", e => { if (e.target.name === "lsrc") $("#lUrlF").hidden = e.target.value !== "stream"; });
+$("#liveGo").addEventListener("click", async () => {
+  const source = $('input[name="lsrc"]:checked').value, b = $("#liveGo");
+  b.disabled = true; $("#liveErr").textContent = "";
+  let stream = null;
+  try {
+    if (source === "mic") {
+      if (S.mic) throw new Error("이미 이 창에서 마이크로 듣고 있습니다");
+      try { stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true}}); }
+      catch (err) { throw new Error(err.name === "NotAllowedError" ? "마이크 사용이 막혀 있습니다 — 주소창 왼쪽에서 마이크를 허용하세요" : "마이크를 찾지 못했습니다"); }
+    }
+    const job = await api("/api/live", J("POST", {source, url: $("#lUrl").value || null, lang: $("#lLang").value || null, context: $("#lCtx").value, title: $("#lTitle").value || null}));
+    $("#dLive").close();
+    if (stream) await startMic(job.id, stream);
+    S.jobs = await api("/api/jobs"); await select(job.id);
+  } catch (err) { stream?.getTracks().forEach(t => t.stop()); $("#liveErr").textContent = err.message; }
+  finally { b.disabled = false; }
+});
+
+/* 마이크 → 16kHz PCM16 → WebSocket */
+const WORKLET = `class P extends AudioWorkletProcessor{process(i){const c=i[0]&&i[0][0];if(c)this.port.postMessage(c.slice(0));return true}}registerProcessor("pcm",P)`;
+async function startMic(jid, stream) {
+  const ctx = new AudioContext({sampleRate: 16000});
+  await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], {type: "text/javascript"})));
+  const src = ctx.createMediaStreamSource(stream), node = new AudioWorkletNode(ctx, "pcm");
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/live/${jid}/ws`);
+  ws.binaryType = "arraybuffer";
+  let buf = [], n = 0;
+  node.port.onmessage = ev => {
+    const f = ev.data; let peak = 0;
+    const pcm = new Int16Array(f.length);
+    for (let i = 0; i < f.length; i++) { const v = Math.max(-1, Math.min(1, f[i])); pcm[i] = v * 32767; peak = Math.max(peak, Math.abs(v)); }
+    buf.push(pcm); n += pcm.length;
+    const lv = $("#lvl"); if (lv) lv.style.width = Math.min(100, peak * 140) + "%";
+    if (n >= 1600 && ws.readyState === 1) { const out = new Int16Array(n); let o = 0; for (const b of buf) { out.set(b, o); o += b.length; } ws.send(out.buffer); buf = []; n = 0; }
+  };
+  src.connect(node);
+  S.mic = {jid, ctx, stream, ws, node};
+  ws.onclose = () => { if (S.mic && S.mic.jid === jid) cleanupMic(); };
+}
+function cleanupMic() {
+  const m = S.mic; if (!m) return; S.mic = null;
+  try { m.node.port.onmessage = null; m.ctx.close(); } catch {}
+  m.stream.getTracks().forEach(t => t.stop());
+}
+async function stopMic(final) {
+  const m = S.mic; if (!m) return;
+  if (!final) await api(`/api/live/${m.jid}/stop?final=false`, {method: "POST"});
+  if (m.ws.readyState === 1) m.ws.send("stop");
+  cleanupMic();
+}
+window.addEventListener("beforeunload", e => { if (S.mic) { e.preventDefault(); e.returnValue = ""; } });
+
+/* ---------------- 목록 폭 ---------------- */
+const LISTW = {min: 220, max: 440, def: 272};
+function setListW(w, save = true) {
+  w = Math.round(Math.min(LISTW.max, Math.max(LISTW.min, w)));
+  document.documentElement.style.setProperty("--listw", w + "px");
+  const sp = $("#split"); sp.setAttribute("aria-valuenow", w); sp.setAttribute("aria-valuemin", LISTW.min); sp.setAttribute("aria-valuemax", LISTW.max);
+  if (save) try { localStorage.setItem("stt.listw", w); } catch {}
+  return w;
+}
+function afterListW() { if (S.job && S.editing == null && S.renamingSpk == null && !S.renamingTitle) renderMain(); }   // 트랙 눈금 간격을 새 폭으로
+{
+  let saved = null; try { saved = +localStorage.getItem("stt.listw"); } catch {}
+  setListW(saved || LISTW.def, false);
+  const sp = $("#split");
+  sp.addEventListener("pointerdown", e => {
+    e.preventDefault(); sp.setPointerCapture(e.pointerId); sp.classList.add("drag");
+    const move = ev => setListW(ev.clientX, false);
+    const up = ev => { sp.removeEventListener("pointermove", move); sp.classList.remove("drag"); setListW(ev.clientX); afterListW(); };
+    sp.addEventListener("pointermove", move); sp.addEventListener("pointerup", up, {once: true});
+  });
+  sp.addEventListener("dblclick", () => { setListW(LISTW.def); afterListW(); });
+  sp.addEventListener("keydown", e => {
+    const cur = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--listw")) || LISTW.def;
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); setListW(cur + (e.key === "ArrowLeft" ? -16 : 16)); afterListW(); }
+    if (e.key === "Home" || e.key === "Enter") { e.preventDefault(); setListW(LISTW.def); afterListW(); }
+  });
+}
+
+/* ---------------- 시작 ---------------- */
+window.addEventListener("hashchange", () => { const want = new URLSearchParams(location.hash.slice(1)).get("job"); if (want && want !== S.sel) select(want); });
+loadStatus(); setInterval(loadStatus, 30000);
+loadJobs().then(connectEvents).catch(err => { $("#main").innerHTML = `<div class="tempty"><h2>서버에 연결하지 못했습니다</h2>${esc(err.message)} — <code>python -m stt serve</code> 가 켜져 있는지 확인하세요.</div>`; });
+</script>
+</body>
+</html>

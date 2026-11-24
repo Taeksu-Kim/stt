@@ -1,0 +1,6 @@
+data/
+__pycache__/
+.pytest_cache/
+*.pyc
+# 남의 서비스 화면 캡처(디자인 레퍼런스)는 기록 폴더에만, 저장소에는 넣지 않는다
+docs/history/*/refs/

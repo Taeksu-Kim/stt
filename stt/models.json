@@ -1,0 +1,80 @@
+{
+  "_설명": "엔진 등록부. 경로·환경만 바꾸면 다른 컴퓨터·다른 모델로 옮겨진다. 다른 파일을 쓰려면 환경 변수 STT_MODELS=<경로>. prefer = 받아 적기 엔진의 정확도 순서, 조건(언어·모델 있음·환경·GPU 여유)에 맞는 첫 엔진을 쓴다. diarizer = 발화 구간·화자를 내는 엔진. 형식은 SKILL.md '엔진 등록부'.",
+  "engines": {
+    "qwen3-asr-1.7b": {
+      "runner": "qwen",
+      "python": "/home/ubuntu/miniconda3/envs/voice-eval/bin/python",
+      "model": "Qwen/Qwen3-ASR-1.7B",
+      "languages": "qwen",
+      "vram_mib": 4500,
+      "note": "정확도 우선 후보. 아직 받지 않음 — 받으면 자동으로 1순위. vram_mib 는 추정(가중치 3.4GB + 여유), 받은 뒤 실측해 고칠 것"
+    },
+    "qwen3-asr-0.6b": {
+      "runner": "qwen",
+      "python": "/home/ubuntu/miniconda3/envs/voice-eval/bin/python",
+      "model": "Qwen/Qwen3-ASR-0.6B",
+      "languages": "qwen",
+      "vram_mib": 2300,
+      "note": "vram_mib 실측 2,290 MiB (2026-10-14, customer-service-agent scripts/voice_bench.py)"
+    },
+    "whisper-turbo": {
+      "runner": "faster_whisper",
+      "python": "/home/ubuntu/miniconda3/envs/voice-eval/bin/python",
+      "model": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+      "languages": "all",
+      "vram_mib": 1600,
+      "note": "int8_float16. vram_mib 실측 1,586 MiB (2026-10-14, 같은 벤치)"
+    },
+    "diarizen": {
+      "runner": "diarizen",
+      "command": "/mnt/d/workspace/voice/tools/diarizen/diarize.sh",
+      "model": "/mnt/d/workspace/voice/models/diarizen/models--BUT-FIT--diarizen-wavlm-large-s80-md-v2",
+      "vram_mib": 2000,
+      "note": "화자 분리 전용 (voice 공용 도구 재사용). 가중치 CC BY-NC 4.0 — 개인·비상업만. vram_mib 추정"
+    }
+  },
+  "prefer": [
+    "qwen3-asr-1.7b",
+    "qwen3-asr-0.6b",
+    "whisper-turbo"
+  ],
+  "diarizer": "diarizen",
+  "languages": {
+    "qwen": [
+      "zh",
+      "en",
+      "yue",
+      "ar",
+      "de",
+      "fr",
+      "es",
+      "pt",
+      "id",
+      "it",
+      "ko",
+      "ru",
+      "th",
+      "vi",
+      "ja",
+      "tr",
+      "hi",
+      "ms",
+      "nl",
+      "sv",
+      "da",
+      "fi",
+      "pl",
+      "cs",
+      "fil",
+      "fa",
+      "el",
+      "ro",
+      "hu",
+      "mk"
+    ]
+  },
+  "downloader": {
+    "command": "/home/ubuntu/.local/bin/yt-dlp",
+    "note": "주소 → 소리만 받기 (yt-dlp 가 여는 주소). 이 PC 밖으로 나가는 유일한 단계"
+  }
+}

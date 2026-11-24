@@ -1,0 +1,6 @@
+# 받아 적기 엔진 환경 (models.json 의 python) — 서버 환경과 따로
+qwen-asr>=0.0.6
+faster-whisper>=1.2
+soundfile>=0.12
+numpy>=1.26
+torch>=2.4
