@@ -1,7 +1,7 @@
 # stt — 프로젝트 규칙
 
 공통 규칙은 상위 `../CLAUDE.md`. 사용법은 `README.md`, 화면 콘셉트는 `docs/design/concept.md`, 결정·실패 기록은
-`../.claude/skills/stt/NOTES.md` (스킬과 같이 자란 기록 — 엔진 결정 D1~D11, 실패 F1~F6).
+`.claude/skills/stt/NOTES.md` (스킬과 같이 자란 기록 — 엔진 결정 D1~D11, 실패 F1~F6). 쓰는 법은 같은 폴더 `SKILL.md`.
 
 - 층: 엔진 `engine.py`(단계: select·fetch·prepare·diarize·transcribe·live) → 서비스 `service.py`(상태의 유일한 주인, SQLite `data/stt.db`)
   → 제품 API `app.py` + A2A `a2a_tasks.py`(같은 서비스 함수). CLI `cli.py` 는 서버 없이 엔진만 쓴다.

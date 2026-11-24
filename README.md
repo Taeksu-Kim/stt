@@ -98,6 +98,17 @@ cd stt && python -m stt serve                 # http://127.0.0.1:8773
   - `python -m stt live <방송 주소|장치|파일|-> [--duration 600] [--realtime] [--no-final]`
   - 결과는 `<이름>.stt/` 폴더의 `segments.json` · `transcript.txt` · `subtitle.srt`다. 같은 조건이면 다시 돌리지 않는다(`--force`로 다시).
 
+## Claude Code 스킬
+
+`.claude/skills/stt/` — Claude Code가 이 도구를 제대로 쓰게 하는 스킬이다 ("이 유튜브 받아 적어", "자막 만들어" 같은 요청에 불린다).
+- 순서: 엔진이 준비됐는지 확인 → 서버(사람 확인·A2A)와 CLI(파일만) 중 고르기 → 실행 → 결과 확인.
+- 사람에게는 화면 링크를 같이 준다.
+- 실제로 겪은 함정이 들어 있다: 긴 오디오 뒷부분 잘림, 화자 수 짐작, GPU를 다른 작업과 나눠 쓸 때 등.
+- 결정과 실패 기록은 같은 폴더 `NOTES.md`.
+
+이 저장소 폴더에서 Claude Code를 열면 바로 쓰인다. 다른 작업 폴더에서 쓰려면 그 폴더의 `.claude/skills/stt`를 이 폴더로 링크한다.
+스킬은 자기 위치에서 저장소 루트(세 단계 위)를 찾는다.
+
 ## 개발
 
 - 층: 엔진 `stt/engine.py`(단계) → 서비스 `stt/service.py`(상태의 유일한 주인, SQLite) → 제품 API `stt/app.py` · A2A `stt/a2a_tasks.py`.
